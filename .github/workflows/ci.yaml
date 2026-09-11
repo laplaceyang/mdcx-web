@@ -61,53 +61,44 @@ jobs:
           libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0
           libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
 
-      - name: Set up uv
+      - name: Set up Python 3.13
         if: steps.changes.outputs.code_changed == 'true'
-        uses: astral-sh/setup-uv@v7
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
 
       - name: Install dependencies
         if: steps.changes.outputs.code_changed == 'true'
         run: |
-          if ! uv sync --locked --dev 2>/dev/null; then
-            echo "Lock file out of date, running uv lock..."
-            uv lock
-            uv sync --dev
-          fi
-
-      - name: Run ruff format
-        if: steps.changes.outputs.code_changed == 'true'
-        run: uv run ruff format --check
-
-      - name: Run ruff check
-        if: steps.changes.outputs.code_changed == 'true'
-        run: uv run ruff check --output-format=github
+          python -m pip install --upgrade pip
+          pip install -e . --group dev
 
       - name: Run mypy
         if: steps.changes.outputs.code_changed == 'true'
-        run: uv run mypy mdcx/
+        run: python -m mypy mdcx/
 
       - name: Run pytest
         if: steps.changes.outputs.code_changed == 'true'
         # PyQt6 需要 display 才能实例化 QApplication；offscreen 平台无需 X11/Wayland
         env:
           QT_QPA_PLATFORM: offscreen
-        run: uv run pytest tests/ --tb=short -m "not network"
+        run: python -m pytest tests/ --tb=short -m "not network"
 
       - name: Run check_actor_db
         if: steps.changes.outputs.code_changed == 'true'
-        run: uv run python -m scripts.check_actor_db
+        run: python -m scripts.check_actor_db
 
       - name: Run check_info_db
         if: steps.changes.outputs.code_changed == 'true'
-        run: uv run python -m scripts.check_info_db
+        run: python -m scripts.check_info_db
 
       - name: Run check_thread_safety
         if: steps.changes.outputs.code_changed == 'true'
-        run: uv run python -m scripts.check_thread_safety
+        run: python -m scripts.check_thread_safety
 
       - name: Run check_ui_layout
         if: steps.changes.outputs.code_changed == 'true'
-        run: uv run python -m scripts.check_ui_layout
+        run: python -m scripts.check_ui_layout
 
   windows:
     name: Windows Compatibility and Build
@@ -151,21 +142,16 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Set up uv
-        if: steps.changes.outputs.code_changed == 'true'
-        uses: astral-sh/setup-uv@v7
-        with:
-          activate-environment: true
-
       - name: Install dependencies
         if: steps.changes.outputs.code_changed == 'true'
         shell: pwsh
         run: |
-          uv sync --locked --all-extras --dev
+          python -m pip install --upgrade pip
+          pip install -e . --group dev
 
       - name: Run Windows offline tests
         if: steps.changes.outputs.code_changed == 'true'
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONIOENCODING: utf-8
-        run: uv run pytest tests/ --tb=short -m "not network"
+        run: python -m pytest tests/ --tb=short -m "not network"

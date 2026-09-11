@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 try:
     from PyQt6.QtGui import QFontDatabase
 except ImportError:  # 无头部署（web 后端）不安装 PyQt6，字体注册仅桌面需要
-    QFontDatabase = None
+    QFontDatabase = None  # type: ignore[misc,assignment]
 
 # 演员数据库 xlsx 列索引（与 tmdb_actor 共享）
 COL_JP = 0

@@ -67,7 +67,6 @@ dev = [
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=6.2.1",
     "rich>=14.1.0",
-    "ruff>=0.15.0,<0.16.0",
     "typer>=0.16.0",
     "types-lxml>=2025.3.30",
     "mypy>=1.17.0",
@@ -79,15 +78,6 @@ dev = [
 markers = [
     "network: 需要真实网络访问的测试（CI 默认跳过）",
     "integration: 针对线上外部站点/服务的集成测试（CI 默认跳过）",
-]
-
-[tool.uv]
-package = true
-required-environments = [
-    "sys_platform == 'linux' and platform_machine == 'x86_64'",
-    "sys_platform == 'darwin' and platform_machine == 'x86_64'",
-    "sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 
 [tool.pyright]

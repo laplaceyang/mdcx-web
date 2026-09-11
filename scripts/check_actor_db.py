@@ -36,7 +36,7 @@ from pathlib import Path
 try:
     from openpyxl import load_workbook
 except ModuleNotFoundError:  # pragma: no cover
-    sys.stderr.write("缺少依赖 openpyxl，请先 uv sync\n")
+    sys.stderr.write("缺少依赖 openpyxl，请先 pip install -e .\n")
     sys.exit(2)
 
 MAIN_PATH = Path(__file__).resolve().parent.parent

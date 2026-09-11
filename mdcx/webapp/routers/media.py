@@ -5,13 +5,11 @@
 """
 
 import re
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
-from mdcx.config.extend import parse_media_paths
-from mdcx.config.manager import manager
+from mdcx.webapp.paths import safe_path
 
 router = APIRouter(prefix="/api/media", tags=["media"])
 
@@ -33,44 +31,21 @@ _CONTENT_TYPES = {
 _RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)$")
 
 
-def _allowed_roots() -> list[Path]:
-    roots: list[Path] = []
-    try:
-        roots.extend(Path(p) for p in parse_media_paths())
-    except Exception:  # noqa: BLE001 媒体目录配置异常时仍允许访问配置目录
-        pass
-    roots.append(Path(manager.data_folder))
-    return roots
-
-
-def _safe_path(path_str: str) -> Path:
-    p = Path(path_str).resolve()
-    if not p.is_file():
-        raise HTTPException(status_code=404, detail=f"文件不存在: {path_str}")
-    for root in _allowed_roots():
-        try:
-            p.relative_to(Path(root).resolve())
-            return p
-        except ValueError:
-            continue
-    raise HTTPException(status_code=403, detail="路径不在允许访问的目录内")
-
-
-def _content_type(p: Path) -> str:
+def _content_type(p) -> str:
     return _CONTENT_TYPES.get(p.suffix.lower(), "application/octet-stream")
 
 
 @router.get("/file")
 def get_file(path: str):
     """图片 / NFO 等小文件直接返回。"""
-    p = _safe_path(path)
+    p = safe_path(path)
     return FileResponse(p, media_type=_content_type(p))
 
 
 @router.get("/video")
 def get_video(path: str, request: Request):
     """视频播放，支持 Range 分段请求（浏览器 <video> 拖动进度条）。"""
-    p = _safe_path(path)
+    p = safe_path(path)
     file_size = p.stat().st_size
     range_header = request.headers.get("range")
     if not range_header:

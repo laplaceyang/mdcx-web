@@ -1220,7 +1220,7 @@ class AsyncWebClient:
             # 同一响应只读一次：request 循环里最多被 2 处判定调用。
             # 流式响应二次 acontent() 会因 queue 已消费而 assert 失败，
             # 故必须缓存；curl_cffi Response 未声明该属性，属性赋值需同时
-            # 压制 mypy attr-defined 与 ruff SLF001
+            # 压制 mypy attr-defined 与 SLF001 告警
             try:
                 response._mdcx_cf_body_text = body_text  # type: ignore[attr-defined] # noqa: SLF001
             except Exception:

@@ -7,8 +7,6 @@ except ModuleNotFoundError:
     from install_git_hooks import install_hooks
 
 COMMANDS = [
-    ["ruff", "format", "--check"],
-    ["ruff", "check"],
     ["mypy", "mdcx/"],
     [
         sys.executable,

@@ -6,7 +6,7 @@
 由主线程槽恢复 UI（见 mdcx/utils/qt_thread.py 与 MEMORY「executor.submit 与
 跨线程 Qt 安全」）。
 
-用法: uv run python -m scripts.check_thread_safety
+用法: python -m scripts.check_thread_safety
       python scripts/check_thread_safety.py mdcx/
 
 退出码: 发现违规返回 1，否则 0。

@@ -94,7 +94,7 @@
 
 **装 Python 依赖报错**：
 ```bash
-uv sync --dev
+pip install -e .
 ```
 如果报某个包找不到，先确认网络能连 PyPI。
 

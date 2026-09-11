@@ -69,6 +69,34 @@ class ScrapeJobManager:
             self.started_at = time.time()
         start_resume_scrape([Path(p) for p in remain_list])
 
+    def start_single(self, file_path: str, appoint_url: str) -> None:
+        """单文件刮削（桌面版工具页"单文件刮削"）：按网址识别站点后刮削指定文件。"""
+        import os
+
+        if not file_path:
+            raise ValueError("请选择文件")
+        if not os.path.isfile(file_path):
+            raise ValueError(f"文件不存在: {file_path}")
+        if not appoint_url:
+            raise ValueError("请填写番号网址")
+        from mdcx.config.extend import deal_url
+
+        website, _ = deal_url(appoint_url.strip())
+        if not website:
+            raise ValueError(f"不支持的网站: {appoint_url}")
+        with self._lock:
+            if self.state != "idle":
+                raise JobAlreadyRunning("当前有任务正在运行或停止中")
+            self.results.clear()
+            self.progress = 0
+            self.started_at = time.time()
+        from mdcx.models.flags import Flags
+
+        Flags.single_file_path = Path(file_path)
+        Flags.appoint_url = appoint_url.strip()
+        Flags.website_name = website
+        start_new_scrape(FileMode.Single)
+
     def resume_info(self) -> dict | None:
         state = get_resume_state()
         if state is None:

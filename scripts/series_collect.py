@@ -5,7 +5,7 @@
 遍历有码/无码列表页 -> 作品详情页，反查 series 链接与系列名（日文），去重保存为 json。
 
 用法:
-    uv run python scripts/series_collect.py [--out OUT.json] [--concurrency N] [--max-pages N]
+    python scripts/series_collect.py [--out OUT.json] [--concurrency N] [--max-pages N]
 
 采集结果为日文系列名，后续需要翻译成中文再并入 info_database.xlsx。
 """

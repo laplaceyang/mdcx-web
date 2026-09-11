@@ -7,7 +7,7 @@
 - 无码: /uncensored/studio/{id}（片商），无 label（无码片商自制自发，无发行体系）
 
 用法:
-    uv run python scripts/studio_label_collect.py --out /tmp/opencode/studio_label_all.json
+    python scripts/studio_label_collect.py --out /tmp/opencode/studio_label_all.json
 """
 
 import argparse

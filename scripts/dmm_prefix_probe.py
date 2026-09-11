@@ -11,16 +11,15 @@
 
 用法:
     # 校验指定系列（逗号分隔）
-    uv run python -m scripts.dmm_prefix_probe ssis,mide,wanz
+    python -m scripts.dmm_prefix_probe ssis,mide,wanz
 
     # 校验文件中的系列清单（每行一个）
-    uv run python -m scripts.dmm_prefix_probe @series.txt
+    python -m scripts.dmm_prefix_probe @series.txt
 
     # 输出推荐补表代码片段
-    uv run python -m scripts.dmm_prefix_probe ssis,mide --emit-code
+    python -m scripts.dmm_prefix_probe ssis,mide --emit-code
 """
 
-# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
@@ -242,7 +241,7 @@ def main() -> None:
     args = parse_args()
     series = _expand_series_args(args.series)
     if not series:
-        print("未提供系列。用法: uv run python -m scripts.dmm_prefix_probe ssis,mide [--emit-code]")
+        print("未提供系列。用法: python -m scripts.dmm_prefix_probe ssis,mide [--emit-code]")
         return
 
     rows = asyncio.run(_run(series, verify=not args.no_verify, attempts=args.attempts))

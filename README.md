@@ -62,13 +62,13 @@ MDCx-diy 是一个桌面工具，自动从 36 个网站抓取视频文件的元�
 ```bash
 git clone https://github.com/cdlongbow/mdcx-diy.git
 cd mdcx-diy
-uv sync --dev
-uv run python main.py
+pip install -e . --group dev
+python main.py
 ```
 
 推送前自检：
 ```bash
-uv run check --skip-hook-install
+check --skip-hook-install
 ```
 
 ## 交流群

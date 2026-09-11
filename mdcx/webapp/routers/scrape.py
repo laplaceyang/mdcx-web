@@ -12,9 +12,11 @@ router = APIRouter(prefix="/api/scrape", tags=["scrape"])
 
 
 class StartRequest(BaseModel):
-    mode: str = "default"  # default | again
+    mode: str = "default"  # default | again | single
     movie_list: list[str] | None = None  # 指定文件列表（不传则按配置扫描）
     resume: bool = False  # true 时按 remain.txt 续刮
+    file_path: str = ""  # mode=single：视频文件路径
+    appoint_url: str = ""  # mode=single：番号网址
 
 
 @router.get("/status")
@@ -37,6 +39,12 @@ async def start(req: StartRequest):
                 raise HTTPException(status_code=409, detail="没有可续刮的剩余任务")
             job_manager.start_resume(state.remain_list)
             return {"ok": True, "resumed": True}
+        if req.mode == "single":
+            try:
+                job_manager.start_single(req.file_path, req.appoint_url)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+            return {"ok": True}
         mode = {"default": FileMode.Default, "again": FileMode.Again}.get(req.mode)
         if mode is None:
             raise HTTPException(status_code=422, detail=f"未知模式: {req.mode}")

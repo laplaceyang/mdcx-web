@@ -24,21 +24,15 @@ Linux 和 Intel 芯片 Mac 没有预编译包，请从下文的源码方式运�
 # 去 https://www.python.org/downloads/ 下载安装
 # Windows 安装时记得勾 "Add Python to PATH"
 
-# 2. 装 uv（Python 包管理器）
-# Windows:
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-# macOS / Linux:
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 3. 下载代码
+# 2. 下载代码
 git clone https://github.com/cdlongbow/mdcx-diy.git
 cd mdcx-diy
 
-# 4. 安装依赖
-uv sync --dev
+# 3. 安装依赖
+pip install -e .
 
-# 5. 启动
-uv run python main.py
+# 4. 启动
+python main.py
 ```
 
 ### Linux 额外步骤

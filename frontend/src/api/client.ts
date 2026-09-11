@@ -50,6 +50,97 @@ export const api = {
     request('/api/network/check', 'POST', { retry_failed_only: retryFailedOnly }),
   networkStop: () => request('/api/network/stop', 'POST'),
   networkResults: () => request<{ running: boolean; results: NetworkResult[] }>('/api/network/results'),
+  // ===== 工具页 =====
+  toolsStatus: () => request<{ running: string[] }>('/api/tools/status'),
+  singleScrape: (filePath: string, appointUrl: string) =>
+    request('/api/scrape/start', 'POST', { mode: 'single', file_path: filePath, appoint_url: appointUrl }),
+  toolsSymlink: (copyNfo: boolean) => request('/api/tools/symlink', 'POST', { copy_nfo: copyNfo }),
+  toolsMoveVideos: () => request('/api/tools/move-videos', 'POST'),
+  toolsSubtitle: () => request('/api/tools/subtitle', 'POST'),
+  toolsExtras: (kind: string, action: string) => request('/api/tools/extras', 'POST', { kind, action }),
+  toolsCoverBackfill: (numbers: string[], overwrite: boolean, watermark: boolean) =>
+    request('/api/tools/cover-backfill', 'POST', { numbers, overwrite, watermark }),
+  toolsGfriends: (localPath: string) => request('/api/tools/gfriends', 'POST', { local_path: localPath }),
+  toolsActorDb: (task: string, params: Record<string, unknown> = {}) =>
+    request('/api/tools/actor-db', 'POST', { task, ...params }),
+  toolsMissingNumber: () => request('/api/tools/missing-number', 'POST'),
+  cacheStats: () => request<{ stats: Record<string, any>; failed: CacheFailedItem[] }>('/api/tools/cache/stats'),
+  cacheExport: () => `${apiBase()}/api/tools/cache/export`,
+  cacheDelete: (paths: string[]) => request('/api/tools/cache/delete', 'POST', { paths }),
+  cacheClear: () => request('/api/tools/cache/clear', 'POST'),
+  posterCut: (path: string, box: [number, number, number, number], outputPath = '') =>
+    request('/api/tools/poster-cut', 'POST', { path, box, output_path: outputPath }),
+  actorInfoSync: () => request('/api/tools/actor-info-sync', 'POST'),
+  actorPhotoSync: () => request('/api/tools/actor-photo-sync', 'POST'),
+  actorKodiWrite: () => request('/api/tools/actor-kodi-write', 'POST'),
+  actorKodiDelete: () => request('/api/tools/actor-kodi-delete', 'POST'),
+  // ===== NFO 信息管理 =====
+  nfoRoots: () => request<{ roots: string[] }>('/api/nfo/roots'),
+  nfoBrowse: (path = '', keyword = '') =>
+    request<{ dirs: string[]; items: NfoSummary[]; current?: string }>(
+      `/api/nfo/browse?path=${encodeURIComponent(path)}&keyword=${encodeURIComponent(keyword)}`,
+    ),
+  nfoItem: (path: string) =>
+    request<{ path: string; fields: Record<string, any>; images: Record<string, string> }>(
+      `/api/nfo/item?path=${encodeURIComponent(path)}`,
+    ),
+  nfoSave: (path: string, fields: Record<string, unknown>) =>
+    request('/api/nfo/item', 'PUT', { path, fields }),
+  nfoBatch: (paths: string[], action: string, value: string) =>
+    request<{ success: number; failed: { path: string; error: string }[] }>('/api/nfo/batch', 'POST', {
+      paths,
+      action,
+      value,
+    }),
+  nfoDelete: (path: string) => request(`/api/nfo/item?path=${encodeURIComponent(path)}`, 'DELETE'),
+  nfoRescrape: (path: string) => request(`/api/nfo/rescrape?path=${encodeURIComponent(path)}`, 'POST'),
+  // ===== Emby 演员管理 =====
+  embyTest: () => request<{ ok: boolean; folders: unknown[] }>('/api/emby/test', 'POST'),
+  embyActors: (filterActorOnly = true) =>
+    request<{ actors: EmbyActor[] }>(`/api/emby/actors?filter_actor_only=${filterActorOnly}`),
+  embyActorDetail: (name: string) =>
+    request<Record<string, any>>(`/api/emby/actor/detail?name=${encodeURIComponent(name)}`),
+  embyActorUpdate: (actor: Record<string, unknown>, imagePath = '') =>
+    request('/api/emby/actor/update', 'POST', { actor, image_path: imagePath }),
+  embyActorUploadImage: (actor: Record<string, unknown>, imagePath: string) =>
+    request('/api/emby/actor/upload-image', 'POST', { actor, image_path: imagePath }),
+  embyActorDeleteImage: (actor: Record<string, unknown>) =>
+    request('/api/emby/actor/delete-image', 'POST', { actor }),
+}
+
+function apiBase(): string {
+  return ''
+}
+
+export interface CacheFailedItem {
+  file_path: string
+  number: string
+  fail_count: number
+  error: string
+  scraped_at: string
+}
+
+export interface NfoSummary {
+  path: string
+  dir: string
+  file: string
+  title: string
+  number: string
+  actor: string[]
+  director: string
+  series: string
+  release: string
+  has_poster: boolean
+  has_thumb: boolean
+}
+
+export interface EmbyActor {
+  name: string
+  id?: string
+  server_id?: string
+  has_image?: boolean
+  has_overview?: boolean
+  movie_count?: number
 }
 
 export interface ScrapeStatus {

@@ -16,7 +16,7 @@
   4. 低频两字名（actor≤3）仅保留被 AVdb 映射收录者（如「テツ」）。
 
 用法示例：
-  uv run python scripts/build_male_actor_list.py --json-dir /path/to/jav_db1 --json-dir /path/to/jav_db2 --avdb-xml /path/to/actor-mapping.xml
+  python scripts/build_male_actor_list.py --json-dir /path/to/jav_db1 --json-dir /path/to/jav_db2 --avdb-xml /path/to/actor-mapping.xml
 """
 
 from __future__ import annotations

@@ -7,11 +7,11 @@
     的连通性与页面结构。
 
 用法:
-    uv run python -m scripts.dev_proxy start            # 启动（默认订阅源+7890 端口）
-    uv run python -m scripts.dev_proxy start --source <订阅URL> --port 7890
-    uv run python -m scripts.dev_proxy status           # 查看运行状态
-    uv run python -m scripts.dev_proxy test <url>       # 走代理测一个 URL
-    uv run python -m scripts.dev_proxy stop             # 停止并清理
+    python -m scripts.dev_proxy start            # 启动（默认订阅源+7890 端口）
+    python -m scripts.dev_proxy start --source <订阅URL> --port 7890
+    python -m scripts.dev_proxy status           # 查看运行状态
+    python -m scripts.dev_proxy test <url>       # 走代理测一个 URL
+    python -m scripts.dev_proxy stop             # 停止并清理
 
 说明:
     - 内核与配置缓存在系统临时目录 mdcx-dev-proxy/ 下，不污染工作区

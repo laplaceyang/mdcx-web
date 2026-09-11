@@ -37,7 +37,7 @@
 ## 重新生成
 
 ```bash
-uv run python scripts/build_male_actor_list.py \
+python scripts/build_male_actor_list.py \
   --json-dir /path/to/jav_db1 \
   --json-dir /path/to/jav_db2 \
   --avdb-xml /path/to/actor-mapping.xml

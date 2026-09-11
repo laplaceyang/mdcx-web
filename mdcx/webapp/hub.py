@@ -6,6 +6,7 @@ call_soon_threadsafe 投递到 uvicorn 主循环，再分发给每个客户端�
 
 import asyncio
 import threading
+from collections.abc import Callable
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -23,7 +24,7 @@ class EventHub:
         self._clients: dict[int, asyncio.Queue] = {}
         self._next_id = 0
         self._lock = threading.Lock()
-        self._unsubscribe = None
+        self._unsubscribe: Callable[[], None] | None = None
         self.dropped = 0
 
     def attach(self) -> None:

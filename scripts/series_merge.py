@@ -19,7 +19,7 @@
 - 只在仓库内出厂 resources/userdata/info_database.xlsx 上操作。
 
 用法:
-    uv run python scripts/series_merge.py --mapping /path/to/series_translation.json [--dry-run]
+    python scripts/series_merge.py --mapping /path/to/series_translation.json [--dry-run]
 """
 
 import argparse
@@ -30,13 +30,13 @@ from pathlib import Path
 try:
     from openpyxl import load_workbook
 except ModuleNotFoundError:  # pragma: no cover
-    sys.stderr.write("缺少依赖 openpyxl，请先 uv sync\n")
+    sys.stderr.write("缺少依赖 openpyxl，请先 pip install -e .\n")
     sys.exit(2)
 
 try:
     from mdcx.manual import ManualConfig
 except ModuleNotFoundError:  # pragma: no cover
-    sys.stderr.write("缺少依赖 mdcx，请先 uv sync\n")
+    sys.stderr.write("缺少依赖 mdcx，请先 pip install -e .\n")
     sys.exit(2)
 
 MAIN_PATH = Path(__file__).resolve().parent.parent
