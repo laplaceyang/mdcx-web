@@ -39,6 +39,7 @@ dependencies = [
     "uvicorn>=0.15.0",
     # --- web 后端 (mdcx.webapp) ---
     "fastapi>=0.115.0",
+    "websockets>=13.0",  # uvicorn WS 支持（/ws 实时推送）
 ]
 
 [project.scripts]

@@ -1,0 +1,216 @@
+[
+  {
+    "tab": "刮削目录",
+    "fields": [
+      "config_version",
+      "media_path",
+      "softlink_path",
+      "success_output_folder",
+      "failed_output_folder",
+      "extrafanart_folder",
+      "media_type",
+      "sub_type",
+      "scrape_softlink_path",
+      "auto_link"
+    ]
+  },
+  {
+    "tab": "清理规则",
+    "fields": [
+      "folders",
+      "string",
+      "file_size",
+      "no_escape",
+      "clean_ext",
+      "clean_name",
+      "clean_contains",
+      "clean_size",
+      "clean_ignore_ext",
+      "clean_ignore_contains",
+      "clean_enable"
+    ]
+  },
+  {
+    "tab": "刮削模式",
+    "fields": [
+      "thread_number",
+      "thread_time",
+      "javdb_time",
+      "main_mode",
+      "read_mode",
+      "update_mode",
+      "update_a_folder",
+      "update_b_folder",
+      "update_c_filetemplate",
+      "update_d_folder",
+      "update_titletemplate",
+      "soft_link",
+      "success_file_move",
+      "failed_file_move",
+      "success_file_rename",
+      "del_empty_folder",
+      "show_poster",
+      "download_files",
+      "compress_downloaded_images",
+      "keep_files",
+      "download_hd_pics",
+      "amazon_skip_poster_size_precheck",
+      "dmm_fallback_enabled",
+      "scrape_like",
+      "field_priority_try_all_images"
+    ]
+  },
+  {
+    "tab": "刮削网站",
+    "fields": [
+      "website_single",
+      "website_youma",
+      "website_wuma",
+      "website_suren",
+      "website_fc2",
+      "website_oumei",
+      "website_guochan",
+      "fixed_scraping_type",
+      "actor_realname",
+      "outline_format",
+      "field_configs",
+      "type_field_configs",
+      "site_configs",
+      "translate_config"
+    ]
+  },
+  {
+    "tab": "命名格式",
+    "fields": [
+      "nfo_include_new",
+      "nfo_tagline",
+      "nfo_tag_include",
+      "nfo_tag_series",
+      "nfo_tag_studio",
+      "nfo_tag_publisher",
+      "nfo_tag_actor",
+      "nfo_merge_strategy",
+      "folder_name",
+      "naming_file",
+      "naming_media",
+      "prevent_char",
+      "fields_rule",
+      "suffix_sort",
+      "actor_no_name",
+      "release_rule",
+      "folder_name_max",
+      "file_name_max",
+      "actor_name_max",
+      "actor_name_more",
+      "umr_style",
+      "leak_style",
+      "wuma_style",
+      "youma_style",
+      "cd_name",
+      "cd_char",
+      "pic_simple_name",
+      "trailer_simple_name",
+      "hd_name",
+      "hd_get",
+      "folder_moword",
+      "file_moword",
+      "folder_hd",
+      "file_hd",
+      "cnword_char",
+      "cnword_style",
+      "folder_cnword",
+      "file_cnword",
+      "subtitle_folder",
+      "subtitle_add",
+      "subtitle_add_chs",
+      "subtitle_add_rescrape"
+    ]
+  },
+  {
+    "tab": "服务器",
+    "fields": [
+      "server_type",
+      "emby_url",
+      "api_key",
+      "user_id",
+      "emby_on",
+      "use_database",
+      "info_database_path",
+      "gfriends_github",
+      "gfriends_local_path",
+      "actor_photo_folder",
+      "actor_image_sources",
+      "actor_info_sources",
+      "actor_filter_only",
+      "actor_deduplicate",
+      "actor_photo_kodi_auto"
+    ]
+  },
+  {
+    "tab": "水印",
+    "fields": [
+      "poster_mark",
+      "thumb_mark",
+      "fanart_mark",
+      "mark_size",
+      "mark_type",
+      "mark_fixed",
+      "mark_pos",
+      "mark_pos_corner",
+      "mark_pos_sub",
+      "mark_pos_mosaic",
+      "mark_pos_hd"
+    ]
+  },
+  {
+    "tab": "网络",
+    "fields": [
+      "use_proxy",
+      "proxy",
+      "proxy_sites",
+      "proxy_route_all",
+      "cf_bypass_url",
+      "cf_bypass_proxy",
+      "cf_bypass_trawl_url",
+      "cf_bypass_trawl_backend",
+      "cf_bypass_trusted_hosts",
+      "cf_selenium_bypass",
+      "verify_ssl",
+      "timeout",
+      "retry",
+      "theporndb_api_token",
+      "tmdb_api_base",
+      "tmdb_api_key",
+      "javdb",
+      "fc2ppvdb",
+      "javbus",
+      "dmm_api_id",
+      "dmm_affiliate_id"
+    ]
+  },
+  {
+    "tab": "日志",
+    "fields": [
+      "show_web_log",
+      "show_from_log",
+      "show_data_log",
+      "save_log"
+    ]
+  },
+  {
+    "tab": "高级",
+    "fields": [
+      "update_check",
+      "local_library",
+      "actors_name",
+      "netdisk_path",
+      "localdisk_path",
+      "window_title",
+      "ui_scale_factor",
+      "switch_on",
+      "timed_interval",
+      "rest_count",
+      "rest_time"
+    ]
+  }
+]

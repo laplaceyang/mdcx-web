@@ -61,3 +61,28 @@ def results(status: str | None = None):
 def clear_results():
     job_manager.clear_results()
     return {"ok": True}
+
+
+@router.get("/detail-log")
+def detail_log():
+    """排空详情日志缓冲（signal.add_log 写入，前端轮询读取）。"""
+    from mdcx.signals import signal
+
+    return {"text": signal.get_log()}
+
+
+@router.post("/retry-failed")
+async def retry_failed():
+    """重刮失败列表（桌面版"重刮失败列表"按钮，走 Flags.again_dic → FileMode.Again）。"""
+    from fastapi.concurrency import run_in_threadpool
+
+    from mdcx.core.scraper import again_search
+    from mdcx.models.flags import Flags
+
+    if not Flags.again_dic:
+        raise HTTPException(status_code=409, detail="没有失败列表可重刮")
+    try:
+        await run_in_threadpool(again_search)
+    except JobAlreadyRunning as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return {"ok": True, "count": len(Flags.new_again_dic) if hasattr(Flags, "new_again_dic") else None}
