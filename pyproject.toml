@@ -42,6 +42,7 @@ dependencies = [
 ]
 
 [project.scripts]
+mdcx-web = "mdcx.cmd.web:main"
 crawl = "mdcx.cmd.crawl:app"
 gen_enums = "mdcx.cmd.gen_enums:main"
 build = "scripts.build:main"
