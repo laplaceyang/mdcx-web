@@ -180,10 +180,10 @@ class Config(BaseModel):
     model_config = ConfigDict()
     # region: General Settings
     config_version: int = Field(default=2, title="配置版本")
-    media_path: str = Field(default="./media", title="媒体路径")
-    softlink_path: str = Field(default="softlink", title="软链接路径")
-    success_output_folder: str = Field(default="JAV_output", title="成功输出目录")
-    failed_output_folder: str = Field(default="failed", title="失败输出目录")
+    media_path: str = Field(default="/media", title="媒体路径")
+    softlink_path: str = Field(default="/soft", title="软链接路径")
+    success_output_folder: str = Field(default="/out", title="成功输出目录")
+    failed_output_folder: str = Field(default="/media/failed", title="失败输出目录")
     extrafanart_folder: str = Field(default="extrafanart_copy", title="额外剧照目录")
     media_type: list[str] = Field(
         default_factory=lambda: [
@@ -654,9 +654,9 @@ class Config(BaseModel):
         title="Emby功能开关",
     )
     use_database: bool = Field(default=False, title="使用数据库")
-    info_database_path: str = Field(default="", title="信息数据库路径")
+    info_database_path: str = Field(default="/app/data/info_database.db", title="信息数据库路径")
     gfriends_github: HttpUrl = Field(default=HttpUrl("https://github.com/gfriends/gfriends"), title="Gfriends Github")
-    gfriends_local_path: str = Field(default="", title="Gfriends 本地仓库路径")
+    gfriends_local_path: str = Field(default="/app/data/gfriends", title="Gfriends 本地仓库路径")
     actor_photo_folder: str = Field(default="", title="演员照片目录")
     actor_image_sources: list[str] = Field(
         default_factory=lambda: ["gfriends", "graphis", "minnano", "local"],
@@ -1163,7 +1163,7 @@ class CompatRule:
 
 
 @dataclass
-class Rename[TRaw = str, TNew = TRaw](CompatRule):
+class Rename[TRaw, TNew](CompatRule):
     old_name: str
     new_name: str
     to_new: Callable[[TRaw], TNew] | None = None

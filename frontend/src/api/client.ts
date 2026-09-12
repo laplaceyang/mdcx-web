@@ -52,6 +52,11 @@ export const api = {
   networkResults: () => request<{ running: boolean; results: NetworkResult[] }>('/api/network/results'),
   // ===== 工具页 =====
   toolsStatus: () => request<{ running: string[] }>('/api/tools/status'),
+  configSites: () => request<{ sites: { site: string; url: string }[] }>('/api/config/sites'),
+  mediaBrowse: (path = '') =>
+    request<{ roots?: string[]; current?: string; parent?: string; dirs: string[]; files: string[] }>(
+      `/api/fs/media-browse?path=${encodeURIComponent(path)}`,
+    ),
   singleScrape: (filePath: string, appointUrl: string) =>
     request('/api/scrape/start', 'POST', { mode: 'single', file_path: filePath, appoint_url: appointUrl }),
   toolsSymlink: (copyNfo: boolean) => request('/api/tools/symlink', 'POST', { copy_nfo: copyNfo }),
@@ -70,6 +75,38 @@ export const api = {
   cacheClear: () => request('/api/tools/cache/clear', 'POST'),
   posterCut: (path: string, box: [number, number, number, number], outputPath = '') =>
     request('/api/tools/poster-cut', 'POST', { path, box, output_path: outputPath }),
+  coverBackfillUpload: (number: string, file: File, overwrite: boolean) =>
+    fetch(
+      `/api/tools/cover-backfill/upload?number=${encodeURIComponent(number)}&filename=${encodeURIComponent(
+        file.name,
+      )}&overwrite=${overwrite}`,
+      { method: 'POST', body: file },
+    ).then(async (resp) => {
+      if (!resp.ok) {
+        let detail = resp.statusText
+        try {
+          detail = (await resp.json()).detail ?? detail
+        } catch {
+          /* keep statusText */
+        }
+        throw new Error(detail)
+      }
+      return resp.json() as Promise<{ ok: boolean; number: string; thumb: string; poster: string }>
+    }),
+  translateTest: (mode: 'text' | 'nfo', payload: { text?: string; path?: string }) =>
+    request<{
+      mode: string
+      original?: string
+      content: string
+      path?: string
+      log?: string
+      field_info?: Record<string, any>
+    }>('/api/tools/translate-test', 'POST', {
+      mode,
+      ...payload,
+    }),
+  translateTestSave: (path: string, content: string) =>
+    request<{ ok: boolean; path: string; bak: string }>('/api/tools/translate-test/save', 'POST', { path, content }),
   actorInfoSync: () => request('/api/tools/actor-info-sync', 'POST'),
   actorPhotoSync: () => request('/api/tools/actor-photo-sync', 'POST'),
   actorKodiWrite: () => request('/api/tools/actor-kodi-write', 'POST'),
@@ -104,6 +141,28 @@ export const api = {
     request('/api/emby/actor/update', 'POST', { actor, image_path: imagePath }),
   embyActorUploadImage: (actor: Record<string, unknown>, imagePath: string) =>
     request('/api/emby/actor/upload-image', 'POST', { actor, image_path: imagePath }),
+  actorsCache: () =>
+    request<{ cached: boolean; ts: number; actors: EmbyActor[] }>('/api/emby/actors-cache'),
+  saveActorsCache: (actors: EmbyActor[]) =>
+    request<{ ok: boolean; ts: number }>('/api/emby/actors-cache', 'PUT', { actors }),
+  embyActorUploadAvatarFile: (name: string, actorId: string, serverId: string, file: File) =>
+    fetch(
+      `/api/emby/actor/upload-image-file?name=${encodeURIComponent(name)}&actor_id=${encodeURIComponent(
+        actorId,
+      )}&server_id=${encodeURIComponent(serverId)}&filename=${encodeURIComponent(file.name)}`,
+      { method: 'POST', body: file },
+    ).then(async (resp) => {
+      if (!resp.ok) {
+        let detail = resp.statusText
+        try {
+          detail = (await resp.json()).detail ?? detail
+        } catch {
+          /* keep statusText */
+        }
+        throw new Error(detail)
+      }
+      return resp.json() as Promise<{ ok: boolean; message: string }>
+    }),
   embyActorDeleteImage: (actor: Record<string, unknown>) =>
     request('/api/emby/actor/delete-image', 'POST', { actor }),
 }

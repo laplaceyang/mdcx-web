@@ -10,10 +10,10 @@ include = ["mdcx*", "scripts*"]
 
 [project]
 name = "mdcx"
-version = "2.0.9"
+version = "3.0.0"
 description = "mdcx"
 readme = "README.md"
-requires-python = ">=3.13.4" # we need os.path.ALLOW_MISSING and type parameter defaults
+requires-python = ">=3.12" # web 后端面向 Python 3.12+（os.path.ALLOW_MISSING 已做兼容回退）
 dependencies = [
     "aiofiles==24.1.0",
     "aiohttp>=3.14.3",  # GHSA-mfx4-hv73-q22v 等 HTTP smuggling/解析器漏洞修复
@@ -28,7 +28,6 @@ dependencies = [
     "parsel>=1.10.0",
     "pillow>=12.2.0",  # GHSA-pwv6-vv43-88gr / whj4-6x5x-4v2j / cfh3-3jmp-rvhc / r73j-pqj5-w3x7 等 12 条告警; 处理不可信封面/缩略图
     "pydantic-settings>=2.14.2",  # GHSA-4xgf-cpjx-pc3j 符号链接越权读 secrets
-    "pyqt6==6.11.0",
     "zhconv==1.4.3",
     "opencv-contrib-python-headless==4.13.0.92",
     "jinja2>=3.1.6",
@@ -46,7 +45,6 @@ dependencies = [
 mdcx-web = "mdcx.cmd.web:main"
 crawl = "mdcx.cmd.crawl:app"
 gen_enums = "mdcx.cmd.gen_enums:main"
-build = "scripts.build:main"
 bump = "scripts.bump:app"
 changelog = "scripts.changelog:app"
 check = "scripts.check:main"
@@ -85,9 +83,6 @@ typeCheckingMode = "off"
 include = ["mdcx"]
 exclude = [
     "**/__pycache__",
-    "mdcx/controllers/main_window/init.py",
-    "mdcx/controllers/main_window/load_config.py",
-    "mdcx/views",
     "mdcx/gen",
 ]
 pythonVersion = "3.13"
@@ -112,9 +107,6 @@ warn_no_return = false
 disallow_untyped_defs = false
 check_untyped_defs = false
 exclude = [
-    "mdcx/controllers/main_window/init\\.py",
-    "mdcx/controllers/main_window/load_config\\.py",
-    "mdcx/views/",
     "mdcx/gen/",
     "mdcx/cf_bypass/",
     "mdcx/tools/minnano_crawler\\.py",
@@ -124,6 +116,5 @@ exclude = [
     "mdcx/core/network_check\\.py",
     "mdcx/core/tmdb_actor\\.py",
     "mdcx/core/translate\\.py",
-    "mdcx/controllers/main_window/site_priority_dialog\\.py",
     "tests/",
 ]

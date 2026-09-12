@@ -1395,12 +1395,27 @@ def start_new_scrape(file_mode: FileMode, movie_list: list[Path] | None = None) 
     signal.exec_set_processbar.emit(0)
     try:
         Flags.start_time = time.time()
-        with manager.acquire_computed() as computed:
+        # 刮削全程持有 Computed 租约：否则保存配置触发热切换时，旧网络客户端会在
+        # 请求间隙被 close_when_idle 关闭，飞行中/后续请求打到已关闭的 curl 句柄上，
+        # 报 "initializer for ctype 'void *' must be a cdata pointer, not NoneType"
+        lease = manager.acquire_computed()
+        try:
+            computed = lease.__enter__()
             crawler_provider = CrawlerProvider(
                 manager.config, computed.async_client, config_getter=lambda: manager.config
             )
-        scraper = Scraper(crawler_provider)
-        executor.submit(scraper.run(file_mode, movie_list))
+            scraper = Scraper(crawler_provider)
+        except BaseException:
+            lease.__exit__(None, None, None)
+            raise
+
+        async def run_and_release():
+            try:
+                await scraper.run(file_mode, movie_list)
+            finally:
+                lease.__exit__(None, None, None)  # 内部走 submit_critical，取消场景也能释放
+
+        executor.submit(run_and_release())
     except Exception as e:
         signal.show_traceback_log(traceback.format_exc())
         signal.show_log_text(traceback.format_exc())

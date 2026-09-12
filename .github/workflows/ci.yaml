@@ -51,16 +51,6 @@ jobs:
           if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then BASE_SHA="HEAD^"; fi
           git diff --check "$BASE_SHA" "$GITHUB_SHA"
 
-      - name: Install system dependencies
-        if: steps.changes.outputs.code_changed == 'true'
-        run: >
-          sudo apt-get update -y && sudo apt-get install -y
-          libglib2.0-0 libegl1 libgl1 libfontconfig1
-          libqt6core6 libqt6gui6 libqt6widgets6 libqt6network6 libqt6xml6
-          libdbus-1-3 libxkbcommon0 libopengl0
-          libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0
-          libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
-
       - name: Set up Python 3.13
         if: steps.changes.outputs.code_changed == 'true'
         uses: actions/setup-python@v5
@@ -79,9 +69,6 @@ jobs:
 
       - name: Run pytest
         if: steps.changes.outputs.code_changed == 'true'
-        # PyQt6 需要 display 才能实例化 QApplication；offscreen 平台无需 X11/Wayland
-        env:
-          QT_QPA_PLATFORM: offscreen
         run: python -m pytest tests/ --tb=short -m "not network"
 
       - name: Run check_actor_db
@@ -96,9 +83,18 @@ jobs:
         if: steps.changes.outputs.code_changed == 'true'
         run: python -m scripts.check_thread_safety
 
-      - name: Run check_ui_layout
+      - name: Build frontend
         if: steps.changes.outputs.code_changed == 'true'
-        run: python -m scripts.check_ui_layout
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Frontend install and build
+        if: steps.changes.outputs.code_changed == 'true'
+        run: |
+          cd frontend
+          npm install
+          npm run build
 
   windows:
     name: Windows Compatibility and Build
@@ -152,6 +148,5 @@ jobs:
       - name: Run Windows offline tests
         if: steps.changes.outputs.code_changed == 'true'
         env:
-          QT_QPA_PLATFORM: offscreen
           PYTHONIOENCODING: utf-8
         run: python -m pytest tests/ --tb=short -m "not network"

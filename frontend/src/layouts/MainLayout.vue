@@ -25,7 +25,7 @@ onUnmounted(() => {})
 <template>
   <el-container class="app-shell">
     <el-aside width="160px" class="side">
-      <div class="brand">MDCx <span class="brand-sub">Web</span></div>
+      <router-link to="/" class="brand" title="返回主页">MDCx <span class="brand-sub">Web</span></router-link>
       <el-menu :default-active="route.path" router class="nav">
         <el-menu-item index="/scrape">🎬 软件界面</el-menu-item>
         <el-menu-item index="/log">📝 软件日志</el-menu-item>
@@ -70,10 +70,17 @@ onUnmounted(() => {})
   border-right: 1px solid #e4e7ed;
 }
 .brand {
+  display: block;
   font-size: 20px;
   font-weight: 700;
   padding: 16px;
   text-align: center;
+  color: #303133;
+  text-decoration: none;
+  cursor: pointer;
+}
+.brand:hover {
+  color: var(--el-color-primary);
 }
 .brand-sub {
   color: var(--el-color-primary);

@@ -24,6 +24,26 @@ def get_schema():
     return Config.model_json_schema()
 
 
+@router.get("/sites")
+def get_sites():
+    """全部站点的实际生效 URL（含用户自定义），供单文件刮削的番号网址选择。"""
+    from mdcx.crawlers.base import crawler_registry
+    from mdcx.config.models import Website
+
+    out = []
+    for site in Website:
+        cls = crawler_registry.get(site)
+        if cls is None:
+            continue
+        try:
+            url = str(cls.base_url_())
+        except Exception:  # noqa: BLE001
+            url = ""
+        if url:
+            out.append({"site": site.value, "url": url})
+    return {"sites": out}
+
+
 @router.put("")
 def put_config(body: dict):
     data = body.get("config")

@@ -6,6 +6,7 @@ import os
 import random
 import re
 import sys
+import traceback
 import threading
 import time
 from collections.abc import Callable
@@ -1796,7 +1797,9 @@ class AsyncWebClient:
                     retry = True
                     await self._record_transport_failure(error_msg, pool_key=pool_key)
                 except Exception as e:
-                    error_msg = f"curl-cffi 异常: {e!s}"
+                    error_msg = f"curl-cffi 异常: {type(e).__name__}: {e!s}"
+                    # 非预期异常（如 cffi 指针错误）打完整堆栈，便于定位竞态/版本问题
+                    self._log(f"curl-cffi 异常堆栈: {traceback.format_exc(limit=8)}")
                     retry = True
                     await self._record_transport_failure(error_msg, pool_key=pool_key)
                 if not retry:

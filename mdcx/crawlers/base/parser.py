@@ -123,7 +123,7 @@ def re_findall(pattern: str, text: str, flags: int = 0) -> list[tuple[str, ...]]
     return r
 
 
-class DetailPageParser[T: Context = Context]:
+class DetailPageParser[T: Context]:
     """
     详情页解析器的基类. 子类应重写所需字段的对应方法.
 

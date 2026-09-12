@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from mdcx.web_async import AsyncWebClient
 
 
-class GenericBaseCrawler[T: Context = Context](ABC):
+class GenericBaseCrawler[T: Context](ABC):
     """
     爬虫基类. 所有具体爬虫均应继承此类并实现其抽象方法.
 
@@ -329,7 +329,7 @@ class GenericBaseCrawler[T: Context = Context](ABC):
         return None
 
 
-class BaseCrawler[T: Context = Context](GenericBaseCrawler[T]):
+class BaseCrawler[T: Context](GenericBaseCrawler[T]):
     def new_context(self, input: CrawlerInput) -> T:
         return Context(input=input)  # type: ignore[return-value]
 

@@ -1,9 +1,9 @@
 {
   "config_version": 2,
-  "media_path": "D:\\Media\\Input",
-  "softlink_path": "X:\\Media\\Softlink",
-  "success_output_folder": "D:\\Media\\Input",
-  "failed_output_folder": "D:\\Media\\Input\\failed",
+  "media_path": "/media",
+  "softlink_path": "/soft",
+  "success_output_folder": "/out",
+  "failed_output_folder": "/media/failed",
   "extrafanart_folder": "extrafanart_copy",
   "media_type": [
     ".mp4",
@@ -812,9 +812,9 @@
     "actor_replace"
   ],
   "use_database": false,
-  "info_database_path": "D:/Data/MDCX/Actress.db",
+  "info_database_path": "/app/data/info_database.db",
   "gfriends_github": "https://github.com/gfriends/gfriends",
-  "gfriends_local_path": "D:/git/gfriends",
+  "gfriends_local_path": "/app/data/gfriends",
   "actor_photo_folder": "",
   "actor_photo_kodi_auto": false,
   "poster_mark": 1,

@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .routers import config as config_router
+from .routers import fs as fs_router
 from .routers import media as media_router
 from .routers import network as network_router
 from .routers import nfo as nfo_router
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
 
     app.include_router(scrape_router.router)
     app.include_router(config_router.router)
+    app.include_router(fs_router.router)
     app.include_router(media_router.router)
     app.include_router(network_router.router)
     app.include_router(nfo_router.router)

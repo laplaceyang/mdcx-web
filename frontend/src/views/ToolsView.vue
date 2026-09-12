@@ -3,12 +3,15 @@ import { onActivated, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api/client'
 import { useScrapeStore } from '../stores/scrape'
+import DirPicker from '../components/DirPicker.vue'
+import MediaFilePicker from '../components/MediaFilePicker.vue'
 
 const scrape = useScrapeStore()
 
 // 单文件刮削
 const singleFile = ref('')
 const singleUrl = ref('')
+const siteOptions = ref<{ site: string; url: string }[]>([])
 // 软链接
 const symlinkCopyNfo = ref(false)
 // 封面补图
@@ -74,6 +77,153 @@ async function onActorDb(task: string, extra: Record<string, unknown> = {}) {
   await run(task, () => api.toolsActorDb(task, extra))
 }
 
+// 上传图片补图：共用番号列表的首个番号（与开始补图一致），不单独设输入框
+function firstBackfillNumber(): string {
+  const first = backfillNumbers.value.split(/\s+/).filter(Boolean)[0] ?? ''
+  if (first.includes('/')) return '' // 是文件路径不是番号
+  return first
+}
+
+async function onUploadCover(uploadFile: { raw?: File }) {
+  const raw = uploadFile.raw
+  if (!raw) return
+  const number = firstBackfillNumber()
+  if (!number) {
+    ElMessage.warning('请先在上方填写番号（如 FNS-248）')
+    return
+  }
+  try {
+    const d = await api.coverBackfillUpload(number, raw, backfillOverwrite.value)
+    ElMessage.success(`上传补图完成：${d.thumb} / ${d.poster}`)
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+// 翻译测试
+const translateMode = ref<'nfo' | 'text' | 'edit'>('text')
+const translateNfo = ref('')
+const translateText = ref('')
+const translateDialog = ref(false)
+const translateLoading = ref(false)
+const translateResult = ref('')
+const translateNfoPath = ref('')
+const translateLog = ref('')
+const translateFieldInfo = ref<Record<string, any> | null>(null)
+// NFO 直接编辑
+const editNfoPath = ref('')
+const editNfoContent = ref('')
+const editLoading = ref(false)
+
+function copyTranslateResult() {
+  navigator.clipboard
+    .writeText(translateResult.value)
+    .then(() => ElMessage.success('已复制到剪贴板'))
+    .catch(() => ElMessage.error('复制失败'))
+}
+
+function downloadTranslateNfo() {
+  const blob = new Blob([translateResult.value], { type: 'text/xml;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = translateNfoPath.value.split('/').pop() || 'translated.nfo'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+async function onOverwriteSave() {
+  try {
+    await ElMessageBox.confirm(`将覆盖保存到 ${translateNfoPath.value}（原文件自动备份为 .bak），确定？`, '覆盖保存', {
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    const d = await api.translateTestSave(translateNfoPath.value, translateResult.value)
+    ElMessage.success(`已覆盖保存，原文件备份为 ${d.bak}`)
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function startTranslate() {
+  if (translateMode.value === 'edit') return
+  if (translateMode.value === 'nfo' && !translateNfo.value) {
+    ElMessage.warning('请先选择 NFO 文件')
+    return
+  }
+  if (translateMode.value === 'text' && !translateText.value.trim()) {
+    ElMessage.warning('请输入要翻译的内容')
+    return
+  }
+  translateDialog.value = true
+  translateLoading.value = true
+  translateResult.value = ''
+  try {
+    const d = await api.translateTest(
+      translateMode.value,
+      translateMode.value === 'nfo' ? { path: translateNfo.value } : { text: translateText.value },
+    )
+    translateResult.value = d.content
+    translateNfoPath.value = d.path ?? ''
+    translateLog.value = d.log ?? ''
+    translateFieldInfo.value = d.field_info ?? null
+  } catch (e) {
+    translateDialog.value = false
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  } finally {
+    translateLoading.value = false
+  }
+}
+
+// NFO 直接编辑：读取原文 → 编辑 → 保存（.bak 备份）
+async function readNfoForEdit() {
+  if (!editNfoPath.value) {
+    ElMessage.warning('请先选择 NFO 文件')
+    return
+  }
+  editLoading.value = true
+  try {
+    const resp = await fetch(`/api/media/file?path=${encodeURIComponent(editNfoPath.value)}`)
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail ?? resp.statusText)
+    editNfoContent.value = await resp.text()
+    ElMessage.success('已读取，可直接编辑后保存')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  } finally {
+    editLoading.value = false
+  }
+}
+
+async function saveEditedNfo() {
+  if (!editNfoPath.value || !editNfoContent.value.trim()) {
+    ElMessage.warning('没有可保存的内容')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `将覆盖保存到 ${editNfoPath.value}（原文件自动备份为 .bak），确定？`,
+      '保存 NFO',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const d = await api.translateTestSave(editNfoPath.value, editNfoContent.value)
+    ElMessage.success(`已保存，原文件备份为 ${d.bak}`)
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+function onBackfillFilesPicked(paths: string | string[]) {
+  const list = Array.isArray(paths) ? paths : [paths]
+  const merged = [...backfillNumbers.value.split(/\s+/).filter(Boolean), ...list]
+  backfillNumbers.value = Array.from(new Set(merged)).join(' ')
+}
+
 async function refreshCache() {
   try {
     const d = await api.cacheStats()
@@ -115,6 +265,11 @@ onMounted(() => {
   refreshStatus()
   void refreshCache()
   statusTimer = window.setInterval(refreshStatus, 3000)
+  // 站点 URL（含用户自定义），供单文件刮削的番号网址下拉选择
+  api
+    .configSites()
+    .then((d) => (siteOptions.value = d.sites))
+    .catch(() => {})
 })
 onActivated(refreshStatus)
 </script>
@@ -129,8 +284,23 @@ onActivated(refreshStatus)
     <el-row :gutter="12">
       <el-col :span="12">
         <el-card shadow="never" header="🎯 单文件刮削">
-          <el-input v-model="singleFile" placeholder="视频文件绝对路径" class="mb" />
-          <el-input v-model="singleUrl" placeholder="番号网址（如 https://javdb.com/...）" class="mb" />
+          <div class="labeled-row">
+            <span class="row-label">视频文件</span>
+            <MediaFilePicker v-model="singleFile" placeholder="从配置的媒体目录中选择视频文件" />
+          </div>
+          <div class="labeled-row">
+            <span class="row-label">番号网址</span>
+            <el-select
+              v-model="singleUrl"
+              class="grow"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择配置的站点，或直接输入完整网址"
+            >
+              <el-option v-for="s in siteOptions" :key="s.site" :label="`${s.site} · ${s.url}`" :value="s.url" />
+            </el-select>
+          </div>
           <el-button type="primary" :disabled="scrape.running || scrape.stopping" @click="onSingleScrape">
             刮削
           </el-button>
@@ -173,15 +343,122 @@ onActivated(refreshStatus)
     <el-row :gutter="12" class="mt">
       <el-col :span="12">
         <el-card shadow="never" header="🖼️ 封面补图">
-          <el-input v-model="backfillNumbers" type="textarea" :rows="2" placeholder="番号列表（空格分隔）" class="mb" />
+          <div class="labeled-row">
+            <span class="row-label">番号列表</span>
+            <el-input
+              v-model="backfillNumbers"
+              type="textarea"
+              :rows="2"
+              class="grow"
+              placeholder="番号列表（空格分隔），如：FNS-248 DVAJ-754"
+            />
+          </div>
+          <div class="labeled-row">
+            <span class="row-label">选择文件</span>
+            <MediaFilePicker
+              :model-value="''"
+              multiple
+              placeholder="也可从配置的媒体目录中选择视频文件（可多选）"
+              @update:model-value="onBackfillFilesPicked"
+            />
+          </div>
           <div class="btn-row">
             <el-checkbox v-model="backfillOverwrite" label="覆盖已有图片" />
             <el-checkbox v-model="backfillWatermark" label="加水印" />
             <el-button type="primary" :disabled="isRunning('封面补图')" @click="onCoverBackfill">开始补图</el-button>
+            <el-upload
+              :auto-upload="false"
+              :show-file-list="false"
+              accept="image/jpeg,image/png,image/webp"
+              :on-change="onUploadCover"
+            >
+              <el-button plain>📤 上传图片补图</el-button>
+            </el-upload>
           </div>
+          <p class="upload-hint">上传补图使用「番号列表」的第一个番号，选择本地图后立即保存到成功输出目录：横图自动裁竖版海报</p>
         </el-card>
-        <el-card shadow="never" header="👩 Gfriends 头像库同步" class="mt">
-          <el-input v-model="gfriendsPath" placeholder="Gfriends 本地仓库目录" class="mb" />
+
+        <el-card shadow="never" header="🌐 翻译测试 / NFO 编辑" class="mt">
+          <el-radio-group v-model="translateMode" class="mb">
+            <el-radio-button value="text">直接输入内容</el-radio-button>
+            <el-radio-button value="nfo">NFO 翻译</el-radio-button>
+            <el-radio-button value="edit">NFO 直接编辑</el-radio-button>
+          </el-radio-group>
+
+          <template v-if="translateMode === 'nfo'">
+            <div class="labeled-row">
+              <span class="row-label">NFO 文件</span>
+              <MediaFilePicker
+                v-model="translateNfo"
+                exts=".nfo"
+                placeholder="从媒体目录中选择要翻译的 NFO 文件"
+              />
+            </div>
+            <el-button type="primary" :loading="translateLoading" @click="startTranslate">翻译</el-button>
+          </template>
+
+          <template v-else-if="translateMode === 'edit'">
+            <div class="labeled-row">
+              <span class="row-label">NFO 文件</span>
+              <MediaFilePicker v-model="editNfoPath" exts=".nfo" placeholder="选择要直接编辑的 NFO 文件" />
+              <el-button :loading="editLoading" :disabled="!editNfoPath" @click="readNfoForEdit">读取</el-button>
+            </div>
+            <el-input
+              v-if="editNfoContent"
+              v-model="editNfoContent"
+              type="textarea"
+              :autosize="{ minRows: 10, maxRows: 22 }"
+              class="mb"
+            />
+            <el-button v-if="editNfoContent" type="warning" @click="saveEditedNfo">
+              保存（原文件备份 .bak）
+            </el-button>
+          </template>
+
+          <template v-else>
+            <el-input
+              v-model="translateText"
+              type="textarea"
+              :rows="3"
+              placeholder="输入要翻译的标题或简介（按设置里的翻译引擎和目标语言执行正常流程）"
+              class="mb"
+            />
+            <el-button type="primary" :loading="translateLoading" @click="startTranslate">翻译</el-button>
+          </template>
+        </el-card>
+    <!-- 翻译测试结果弹窗（结果可直接编辑，保存/复制用编辑后的内容） -->
+    <el-dialog v-model="translateDialog" title="翻译结果（可直接编辑）" width="780px" top="6vh" :close-on-click-modal="false">
+      <div v-loading="translateLoading" class="translate-result">
+        <el-input
+          v-if="!translateLoading && translateResult"
+          v-model="translateResult"
+          type="textarea"
+          :autosize="{ minRows: 8, maxRows: 20 }"
+        />
+        <div v-if="!translateLoading && !translateResult" class="empty">（无结果）</div>
+      </div>
+      <div v-if="translateFieldInfo" class="field-info">
+        字段配置：标题语言 {{ translateFieldInfo.title_language }}（{{ translateFieldInfo.title_translate ? '开翻译' : '关翻译' }}）、
+        简介语言 {{ translateFieldInfo.outline_language }}（{{ translateFieldInfo.outline_translate ? '开翻译' : '关翻译' }}）、
+        翻译引擎：{{ (translateFieldInfo.translate_by as string[]).join(' → ') }}
+        <span v-if="translateFieldInfo.title_language === 'jp'" class="warn">
+          ⚠️ 标题语言设为日文 = 保留原文不翻译（与正常刮削流程一致）
+        </span>
+      </div>
+      <pre v-if="translateLog" class="translate-log">{{ translateLog }}</pre>
+      <template #footer>
+        <el-button @click="copyTranslateResult" :disabled="!translateResult">复制</el-button>
+        <template v-if="translateMode === 'nfo' && translateResult">
+          <el-button @click="downloadTranslateNfo">下载 NFO</el-button>
+          <el-button type="warning" @click="onOverwriteSave">覆盖保存（原文件备份 .bak）</el-button>
+        </template>
+        <el-button @click="translateDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 翻译测试结果弹窗结束 -->
+    <el-card shadow="never" header="👩 Gfriends 头像库同步" class="mt">
+          <DirPicker v-model="gfriendsPath" placeholder="Gfriends 本地仓库目录" class="mb" />
           <el-button :disabled="isRunning('Gfriends 同步')" @click="run('Gfriends 同步', () => api.toolsGfriends(gfriendsPath))">
             同步
           </el-button>
@@ -223,7 +500,7 @@ onActivated(refreshStatus)
             </el-button>
           </div>
           <div class="btn-row mt">
-            <el-input v-model="actorDbNfoDir" placeholder="nfo 目录（更新 nfo tmdbid 用）" class="grow" />
+            <DirPicker v-model="actorDbNfoDir" placeholder="nfo 目录（更新 nfo tmdbid 用）" class="grow" />
           </div>
         </el-card>
 
@@ -272,6 +549,22 @@ onActivated(refreshStatus)
 .mb {
   margin-bottom: 10px;
 }
+.labeled-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.labeled-row .row-label {
+  font-size: 13px;
+  color: #606266;
+  flex-shrink: 0;
+  width: 62px;
+}
+.labeled-row .grow {
+  flex: 1;
+  min-width: 0;
+}
 .mt {
   margin-top: 12px;
 }
@@ -294,6 +587,54 @@ onActivated(refreshStatus)
 }
 .btn-grid .el-button {
   margin-left: 0;
+}
+.upload-hint {
+  color: #909399;
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+.translate-result {
+  min-height: 200px;
+}
+.field-info {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.8;
+}
+.field-info .warn {
+  color: var(--el-color-warning);
+  margin-left: 8px;
+}
+.translate-log {
+  margin: 10px 0 0;
+  max-height: 140px;
+  overflow: auto;
+  background: #f5f7fa;
+  color: #606266;
+  font-size: 12px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+}
+.result-pre {
+  margin: 0;
+  max-height: 55vh;
+  overflow: auto;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-size: 12px;
+  line-height: 1.7;
+  border-radius: 6px;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.empty {
+  color: #909399;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
 }
 .cache-stats {
   display: flex;

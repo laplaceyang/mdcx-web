@@ -24,6 +24,8 @@ async function onCheckUpdate() {
     updateState.value = result
     if (result.has_new) {
       ElMessage.success(`有新版本！（${result.latest}）`)
+    } else if (result.latest == null) {
+      ElMessage.info('仓库还没有发布 Release，暂时无法对比版本（发布纯数字 tag 的 Release 后可检测更新）')
     } else {
       ElMessage.info('当前已是最新版本')
     }

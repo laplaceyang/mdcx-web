@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Coroutine
 from typing import Any
 
 
-class GatherGroup[T = Any]:
+class GatherGroup[T]:
     """
     类似 asyncio.TaskGroup 的 API, 但底层使用 asyncio.gather 实现, 因此可在部分任务抛出异常时继续运行.
 
