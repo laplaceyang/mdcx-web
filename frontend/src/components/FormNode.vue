@@ -1,5 +1,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import DirPicker from './DirPicker.vue'
+
+// 目录/文件类配置字段：用服务器目录浏览弹窗代替纯手填
+const DIR_FIELDS = new Set([
+  'media_path',
+  'softlink_path',
+  'success_output_folder',
+  'failed_output_folder',
+  'extrafanart_folder',
+  'subtitle_folder',
+  'actor_photo_folder',
+  'gfriends_local_path',
+])
+const FILE_FIELDS = new Set(['info_database_path'])
+const LIST_DIR_FIELDS = new Set(['folders'])
 
 /**
  * Schema 驱动的递归表单节点：
@@ -14,6 +29,7 @@ const props = defineProps<{
   label?: string
   model?: Record<string, any>
   fieldKey?: string
+  fieldName?: string
 }>()
 
 const emit = defineEmits<{ (e: 'update:modelValue', value: any): void }>()
@@ -43,13 +59,20 @@ const kind = computed(() => {
   if (r.type === 'boolean') return 'switch'
   if (r.type === 'integer' || r.type === 'number') return 'number'
   if (r.enum) return 'select'
-  if (r.type === 'array') return r.items?.type === 'string' ? 'tags' : 'json'
+  if (r.type === 'array') {
+    if (r.items?.enum) return 'enumTags'
+    return r.items?.type === 'string' ? 'tags' : 'json'
+  }
   if (r.type === 'object') return 'object'
-  if (r.type === 'string') return (r.maxLength ?? 0) > 160 || r.format === 'uri' ? 'textarea' : 'input'
+  if (r.type === 'string') return (r.maxLength ?? 0) > 160 && r.format !== 'uri' ? 'textarea' : 'input'
   return 'json'
 })
 
 const enumOptions = computed(() => (resolved.value.enum ?? []).map((v: any) => String(v)))
+
+const isDirField = computed(() => DIR_FIELDS.has(props.fieldName ?? ''))
+const isFileField = computed(() => FILE_FIELDS.has(props.fieldName ?? ''))
+const isListDirField = computed(() => LIST_DIR_FIELDS.has(props.fieldName ?? ''))
 const textValue = computed(() => (props.modelValue === undefined || props.modelValue === null ? '' : String(props.modelValue)))
 
 const jsonText = ref('')
@@ -112,6 +135,26 @@ function updateField(key: string, value: any) {
       <el-option v-for="v in enumOptions" :key="v" :label="v" :value="v" />
     </el-select>
   </template>
+  <template v-else-if="kind === 'tags' && isListDirField">
+    <DirPicker :model-value="(modelValue as string[]) ?? []" multiple @update:model-value="update" />
+  </template>
+  <template v-else-if="kind === 'enumTags'">
+    <div class="enum-tags">
+      <el-select
+        :model-value="(modelValue as string[]) ?? []"
+        class="w-full"
+        multiple
+        :reserve-keyword="false"
+        :placeholder="resolved.description || '按顺序选择（先选的优先）'"
+        @update:model-value="update"
+      >
+        <el-option v-for="v in (resolved.items?.enum ?? []).map((v: any) => String(v))" :key="v" :label="v" :value="v" />
+      </el-select>
+      <div v-if="(modelValue as string[])?.length" class="order-line">
+        当前顺序：<el-tag v-for="(v, i) in (modelValue as string[])" :key="v" size="small" class="order-tag">{{ Number(i) + 1 }}. {{ v }}</el-tag>
+      </div>
+    </div>
+  </template>
   <template v-else-if="kind === 'tags'">
     <el-select
       :model-value="(modelValue as string[]) ?? []"
@@ -127,11 +170,26 @@ function updateField(key: string, value: any) {
       <el-option v-for="v in (modelValue as string[]) ?? []" :key="v" :label="v" :value="v" />
     </el-select>
   </template>
-  <template v-else-if="kind === 'textarea'">
+  <template v-else-if="kind === 'textarea' && !isDirField">
     <el-input
       type="textarea"
       :rows="3"
       :model-value="textValue"
+      @update:model-value="update"
+    />
+  </template>
+  <template v-else-if="isDirField">
+    <DirPicker
+      :model-value="String(modelValue ?? '')"
+      :append-sep="fieldName === 'media_path' ? '|' : ''"
+      @update:model-value="update"
+    />
+  </template>
+  <template v-else-if="isFileField">
+    <DirPicker
+      :model-value="String(modelValue ?? '')"
+      files
+      dir-file-append="info_database.db"
       @update:model-value="update"
     />
   </template>
@@ -189,5 +247,17 @@ function updateField(key: string, value: any) {
 .obj-label {
   font-size: 13px;
   color: #606266;
+}
+.enum-tags .order-line {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #606266;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.order-tag {
+  font-family: ui-monospace, Menlo, monospace;
 }
 </style>

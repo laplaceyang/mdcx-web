@@ -17,8 +17,8 @@ class NotSupport: ...
 
 NOT_SUPPORT = NotSupport()
 
-type FieldValue[T = str] = T | None | NotSupport
-type FieldRes[T = str] = FieldValue[T]
+type FieldValue[T] = T | None | NotSupport
+type FieldRes[T] = FieldValue[T]
 
 type SelectorType = XPath | CSSSelector | Pattern | str
 

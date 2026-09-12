@@ -5,7 +5,7 @@ from mdcx.config.enums import DownloadableFile, FixedScrapingType, HDPicSource, 
 from mdcx.config.models import DEFAULT_FIELD_SITE_PRIORITY, Config
 from mdcx.config.resource_policy import resource_policy
 from mdcx.config.v1 import ConfigV1
-from mdcx.controllers.main_window.site_priority_dialog import (
+from mdcx.config.field_priority import (
     FIELD_PRIORITY_FIELDS,
     _sync_field_sites_after_type_sites_changed,
 )
@@ -301,9 +301,9 @@ def test_default_config_template_is_valid_json_and_matches_current_model():
 
     config = Config.model_validate(template)
 
-    assert config.media_path == "D:\\Media\\Input"
-    assert config.softlink_path == "X:\\Media\\Softlink"
-    assert config.failed_output_folder == "D:\\Media\\Input\\failed"
+    assert config.media_path == "/media"
+    assert config.softlink_path == "/soft"
+    assert config.failed_output_folder == "/media/failed"
     assert config.amazon_skip_poster_size_precheck is False
     assert not hasattr(config, "amazon_strict_pic_verify")
     assert config.field_priority_try_all_images is False

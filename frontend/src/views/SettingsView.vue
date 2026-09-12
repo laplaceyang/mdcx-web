@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api/client'
 import FormNode from '../components/FormNode.vue'
+import FieldPriorityEditor from '../components/FieldPriorityEditor.vue'
+import SiteConfigEditor from '../components/SiteConfigEditor.vue'
 import tabsDef from '../settings-tabs.json'
 
 const schema = ref<Record<string, any> | null>(null)
@@ -127,8 +129,33 @@ function onTabChange(name: string) {
           <div class="fields">
             <div v-for="field in group.fields" :key="field" class="field">
               <div class="field-label" :title="field">{{ fieldTitle(field) }}</div>
-              <div class="field-control">
-                <FormNode :node="fieldNode(field)" :defs="defs" :model-value="config[field]" @update:model-value="config[field] = $event" />
+              <div class="field-control wide">
+                <!-- 三个复杂结构使用专用编辑器（桌面版专用对话框的 web 版） -->
+                <FieldPriorityEditor
+                  v-if="field === 'field_configs'"
+                  variant="field"
+                  :model-value="config[field]"
+                  @update:model-value="config[field] = $event"
+                />
+                <FieldPriorityEditor
+                  v-else-if="field === 'type_field_configs'"
+                  variant="priority"
+                  :model-value="config[field]"
+                  @update:model-value="config[field] = $event"
+                />
+                <SiteConfigEditor
+                  v-else-if="field === 'site_configs'"
+                  :model-value="config[field]"
+                  @update:model-value="config[field] = $event"
+                />
+                <FormNode
+                  v-else
+                  :node="fieldNode(field)"
+                  :defs="defs"
+                  :field-name="field"
+                  :model-value="config[field]"
+                  @update:model-value="config[field] = $event"
+                />
               </div>
             </div>
           </div>
@@ -194,3 +221,7 @@ function onTabChange(name: string) {
   word-break: break-all;
 }
 </style>
+
+.field-control.wide {
+  max-width: none;
+}

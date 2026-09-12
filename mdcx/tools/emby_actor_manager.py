@@ -121,10 +121,14 @@ async def get_emby_actor_list(filter_actor_only: bool = True) -> list[dict]:
     if "emby" == manager.config.server_type:
         server_name = "Emby"
         params: dict[str, str | None] = {
-            "userId": manager.config.user_id,
             "fields": "Overview,ProviderIds,ProductionLocations,Taglines,Genres,Tags,PremiereDate,ProductionYear",
             "enableImages": "true",
         }
+        # Emby 的 userId 必须是 GUID：留空或占位值（如 default）会让 /Persons 直接
+        # 500 "Unrecognized Guid format."；Persons 本身不依赖 userId，此时省略即可
+        user_id = str(manager.config.user_id or "").strip()
+        if user_id and user_id.lower() != "default" and "-" in user_id:
+            params["userId"] = user_id
         if filter_actor_only:
             params["personTypes"] = "Actor"
         url = _append_query(base_url + "/emby/Persons", params)

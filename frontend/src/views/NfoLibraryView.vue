@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, mediaUrl, type NfoSummary } from '../api/client'
+import DirPicker from '../components/DirPicker.vue'
 
 const roots = ref<string[]>([])
 const currentDir = ref('')
@@ -9,6 +10,14 @@ const dirs = ref<string[]>([])
 const items = ref<NfoSummary[]>([])
 const keyword = ref('')
 const selected = ref<NfoSummary[]>([])
+
+// 目录选择器手动输入的防抖浏览（弹窗选择不受影响）
+let browseTimer: number | undefined
+function onDirChange(path: string | string[]) {
+  currentDir.value = Array.isArray(path) ? path[0] ?? '' : path
+  window.clearTimeout(browseTimer)
+  browseTimer = window.setTimeout(() => void browse(currentDir.value), 500)
+}
 
 const editDialog = ref(false)
 const editPath = ref('')
@@ -140,19 +149,33 @@ async function doBatch() {
 
 onMounted(async () => {
   roots.value = (await api.nfoRoots()).roots
-  await browse(roots.value[0] ?? '')
+  // 默认定位到设置里的成功输出目录；目录不存在时回退第一个可用根目录
+  let initial = ''
+  try {
+    initial = String(((await api.config()).config.success_output_folder as string) ?? '')
+  } catch {
+    /* ignore */
+  }
+  try {
+    await api.nfoBrowse(initial) // 探测目录是否存在
+    await browse(initial)
+  } catch {
+    await browse(roots.value[0] ?? '')
+  }
 })
 </script>
 
 <template>
   <div class="nfo-view">
     <el-card shadow="never" class="toolbar">
+      <div class="dir-select" title="扫描目录（默认为设置里的成功输出目录）">
+        <DirPicker :model-value="currentDir" placeholder="选择要管理的 NFO 目录" @update:model-value="onDirChange" />
+      </div>
       <el-button @click="goUp" :disabled="!currentDir">上级目录</el-button>
-      <el-input v-model="keyword" placeholder="关键字过滤" style="width: 220px" clearable @keyup.enter="browse()" />
+      <el-input v-model="keyword" placeholder="关键字过滤" style="width: 200px" clearable @keyup.enter="browse()" />
       <el-button @click="browse()">过滤</el-button>
       <el-button type="danger" plain @click="deleteSelected">删除选中 NFO</el-button>
       <el-button type="primary" plain @click="openBatch">批量操作…</el-button>
-      <span class="path">{{ currentDir }}</span>
     </el-card>
 
     <el-card shadow="never">
@@ -267,14 +290,10 @@ onMounted(async () => {
   gap: 10px;
   padding: 10px 16px;
 }
-.path {
-  margin-left: auto;
-  color: #909399;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 40%;
+.dir-select {
+  flex: 1;
+  min-width: 260px;
+  max-width: 480px;
 }
 .dirs {
   display: flex;

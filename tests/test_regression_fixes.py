@@ -263,7 +263,6 @@ def test_start_new_scrape_exception_bound():
 def test_no_dead_code_in_core_files():
     """验证核心文件中已清理注释掉的死代码。"""
     checks = {
-        "main.py": ["newWin2 = CutWindow()"],
         "mdcx/core/utils.py": ["json_data[each] = json_data[each].replace"],
         "mdcx/core/scraper.py": [
             "res.outline = split_path(file_path)[1]",

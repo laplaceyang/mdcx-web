@@ -88,21 +88,26 @@ def _check_dir(resolved: Path) -> None:
 
 @router.get("/roots")
 def roots():
-    """可浏览的根目录（媒体目录 + 配置目录）。"""
-    return {"roots": [str(r) for r in allowed_roots()]}
+    """可浏览的根目录（媒体目录 + 配置目录，过滤掉不存在的）。"""
+    return {"roots": [str(r) for r in allowed_roots() if Path(r).exists()]}
 
 
 @router.get("/browse")
 def browse(path: str = "", keyword: str = ""):
     """浏览目录：返回子目录与 nfo 文件列表（含摘要）。keyword 过滤全部字段。"""
     if not path:
-        return {"dirs": [str(r) for r in allowed_roots()], "items": []}
+        return {"dirs": [str(r) for r in allowed_roots() if Path(r).exists()], "items": []}
     d = Path(path)
     if d.is_file():
         d = d.parent
     resolved = d.resolve()
     _check_dir(resolved)
-    dirs = sorted(str(p) for p in d.iterdir() if p.is_dir() and not p.name.startswith("."))
+    if not resolved.is_dir():
+        raise HTTPException(status_code=404, detail=f"目录不存在: {path}（请在「软件设置 → 刮削目录」配置实际存在的媒体路径）")
+    try:
+        dirs = sorted(str(p) for p in d.iterdir() if p.is_dir() and not p.name.startswith("."))
+    except OSError as e:
+        raise HTTPException(status_code=403, detail=f"目录无法读取: {e}") from e
     items = []
     for nfo in sorted(d.glob("*.nfo")):
         try:

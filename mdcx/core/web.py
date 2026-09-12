@@ -1124,13 +1124,23 @@ async def _build_dmm_poster_candidates(result) -> list[PosterCandidate]:
     if is_uncensored_number(number):
         return []
     existing = MediaResourceContext.normalize_url(result.poster or "")
+    picked: list[PosterCandidate] = []
+    seen_cids: set[str] = set()
     for orient, url in generate_image_candidates(number):
         if orient != "portrait":
             continue
         if MediaResourceContext.normalize_url(url) == existing:
-            return []
-        return [PosterCandidate("dmm_direct", url, True)]
-    return []
+            return []  # 源图已是该 DMM 高清候选，无需补充
+        # 取前两个不同 cid 的竖版候选：学习前缀误判（如 FNS 的 1fns248 vs 补零
+        # 的 1fns00248）时首选 404，还有静态路由 cid 兜底；数量有界避免探测风暴
+        cid = url.rsplit("/", 2)[-2]
+        if cid in seen_cids:
+            continue
+        seen_cids.add(cid)
+        picked.append(PosterCandidate("dmm_direct", url, True))
+        if len(picked) >= 2:
+            break
+    return picked
 
 
 def _expand_poster_candidates_with_spfcas(candidates: list[PosterCandidate]) -> list[PosterCandidate]:

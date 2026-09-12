@@ -22,13 +22,13 @@ mdcx/
 
 ## 架构
 
-采用 MVC 分层：
+采用分层架构：
 
 ```
-UI 层 (PyQt6)         → 界面展示、用户操作
-控制器层               → 事件处理、配置管理、信号调度
+Web 层 (mdcx/webapp)   → FastAPI 路由 + WebSocket 推送 + Vue3 前端（frontend/）
+任务编排层             → ScrapeJobManager、工具运行器、信号总线（signals.py）
 核心业务层             → 刮削器、NFO 生成、翻译、图片处理
-爬虫框架               → 35 个爬虫，统一基类
+爬虫框架               → 36 个爬虫，统一基类
 基础设施层             → HTTP 客户端、文件系统、OpenCV
 ```
 
@@ -217,7 +217,7 @@ ASIN 数据库（Excel `amazon_asin_database.xlsx`），搜索到的 ASIN 与番
 ## 依赖
 
 从 `pyproject.toml` 读取，核心依赖：
-- PyQt6 6.11.0（UI 框架）
+- FastAPI + uvicorn + websockets（web 后端与实时推送）
 - httpx（HTTP 客户端）
 - curl-cffi >=0.15.0（TLS 指纹模拟；0.12 起 sentinel 更名已兼容）
 - lxml + parsel + beautifulsoup4（HTML/XML 解析）
@@ -235,19 +235,12 @@ ASIN 数据库（Excel `amazon_asin_database.xlsx`），搜索到的 ASIN 与番
   python -m pytest tests/                          # 全部测试
   python -m pytest tests/ --tb=short -m "not network" -x  # 仅不联网测试
   ```
-- **CI 平台分工**：Linux CI 执行 mypy、完整离线测试、数据库检查、线程安全检查和 UI 布局检查；Windows CI 在 `windows-latest` runner 上执行同一组离线 pytest，覆盖 Windows 路径和文件系统条件分支；Release 打包则用固定的 `windows-2025` runner 构建 EXE。PyInstaller EXE 由 Release 工作流和手动 `build-windows.yml` 工作流验证。
-- **覆盖**：tests/crawlers/ 爬虫测试、tests/core/ 核心测试、NFO 测试、配置测试、`tests/test_ui_structure.py`（UI 结构）、`tests/test_actor_clean.py`（演员数据语义清洗）等
+- **CI 平台分工**：Linux CI 执行 mypy、完整离线测试、数据库检查、线程安全检查和前端构建；Windows CI 在 `windows-latest` runner 上执行同一组离线 pytest，覆盖 Windows 路径和文件系统条件分支。
+- **覆盖**：tests/crawlers/ 爬虫测试、tests/core/ 核心测试、NFO 测试、配置测试、`tests/test_webapp_api.py`（web API/WS）、`tests/test_headless_imports.py`（无 PyQt6 导入守卫）、`tests/test_actor_clean.py`（演员数据语义清洗）等
 - **演员数据清洗测试**（`tests/test_actor_clean.py`）：验证 `mdcx/utils/actor_clean.py` 对名字/别名字段的语义清洗——系列标签/年份/国籍/事务所标注剥离、作品标题剔除、悬空斜杠修复、占位符识别置空，同时确保罗马音/日文映射、读音、韩文别名等合法内容不被误伤。新数据写入（刮削写入 `update_actor_db_row`）前统一经此模块清洗
 - **演员库完整性测试**（`tests/test_check_actor_db.py`）：验证 `scripts/check_actor_db.py` 对出厂 `actor_database.xlsx` 的完整性检查——jp 重复、tmdbid 重复、url 错配、**孤儿 hyperlink**（XML 层解析 `<c>` 定义集合与 `<hyperlink>` ref 差集）等。`clean_actor_db_non_actors.py` 删行后按 cell 实际坐标重建超链接，配合保存后校验防止孤儿 hyperlink 进入仓库
-- **UI 结构测试**（`tests/test_ui_structure.py`）：解析 `mdcx/views/MDCx.ui`，离线验证
-  - groupBox 同父容器内不重叠、无负间距、不超出滚动区高度
-  - 用户控件 objectName 唯一（重复控件是无用残留的信号）
-  - `MDCx.py` 与 `MDCx.ui` 同步：用 pyuic6 重编译后与仓库版文本一致，防止只改 `.py` 不同步 `.ui` 或改 `.ui` 后忘重编译（该校验已跳过：格式化工具移除后失去对齐基准）
-  - **规则**：改动 UI 一律先改 `MDCx.ui`，再运行
-    `python -m PyQt6.uic.pyuic mdcx/views/MDCx.ui -o mdcx/views/MDCx.py`，不要手工改 `MDCx.py`
-- **演员工具页按钮一致性测试**（`tests/test_actor_db_button_consistency.py`）：纯静态校验（无需 Qt 运行时），锁定 `_ACTOR_DB_IDLE_TEXT_MAP` ↔ `MDCx.ui` 中控件 ↔ `MyMainWindow` 顶层 `pyqtSignal(str)` 声明 ↔ `actor_db_finished` 信号契约四层一致。按钮改名、漏声明信号、map 漏收等漂移在 CI 即可捕获
-- **actor_db 并发信号契约**：`actor_db_finished = pyqtSignal(str)` 带 task_id；所有 `_run_actor_db_*` 走 `_run_actor_db_async(btn_attr, busy_text, log_prefix, coro_factory)` 通用模板，防重入依赖 `_actor_db_running` 集合，跨任务误恢复由 `reset_buttons_status` 与 `_on_actor_db_finished` 共同规避
-- **推送前自检**：修改代码后先运行 `quick-check`（mypy）；提交推送前运行 `check --skip-hook-install`（mypy + pytest + check_actor_db + check_info_db + check_thread_safety + check_ui_layout）。
+- **无头导入守卫**（`tests/test_headless_imports.py`）：在子进程拦截 PyQt6 导入，验证核心链路（scraper/crawl/crawlers/webapp）不依赖 Qt
+- **推送前自检**：修改代码后先运行 `quick-check`（mypy）；提交推送前运行 `check --skip-hook-install`（mypy + pytest + check_actor_db + check_info_db + check_thread_safety）。
 
 ## 代码规范
 
@@ -256,7 +249,7 @@ ASIN 数据库（Excel `amazon_asin_database.xlsx`），搜索到的 ASIN 与番
 
 ## 构建
 
-使用 PyInstaller 打包，入口文件 main.py。不推荐自己构建，去 GitHub Releases 下载即可。
+web 版推荐 Docker 部署（见 Dockerfile 与 docs/INSTALL.md）；构建镜像前先在 frontend/ 执行 npm run build。
 
 ## 迁移指南
 

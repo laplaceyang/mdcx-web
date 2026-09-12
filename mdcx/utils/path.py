@@ -59,8 +59,12 @@ def is_descendant(p: str | Path, parent: str | Path) -> bool:
     检查 p 是否是 parent 或者 parent 的后代.
     """
     try:
-        p = os.path.realpath(p, strict=os.path.ALLOW_MISSING)
-        parent = os.path.realpath(parent, strict=os.path.ALLOW_MISSING)
+        # os.path.ALLOW_MISSING 为 3.13 新增（容忍缺失路径）；3.12 下退化为
+        # strict=False——同样容忍缺失路径，仅 symlink 环路不抛错（外层本就
+        # 捕获 OSError 返回 False，环路场景比较结果一致为非后代，安全性不变）
+        strict = getattr(os.path, "ALLOW_MISSING", False)
+        p = os.path.realpath(p, strict=strict)
+        parent = os.path.realpath(parent, strict=strict)
     except OSError:
         return False
     # parent = /foo/bar, p = /foo/barbar 使得简单的前缀判断失效

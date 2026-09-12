@@ -413,6 +413,67 @@ async def _add_watermark(file_info: FileInfo, result: CrawlersResult, other: Oth
         await add_mark(other, file_info, result.mosaic)
 
 
+async def backfill_cover_from_upload(
+    number: str,
+    image_path: Path,
+    output_dir: Path,
+    *,
+    overwrite: bool = False,
+) -> BackfillResult:
+    """用本地上传的图片补图（web 版）：图片作为 thumb，横图自动裁竖版 poster。
+
+    输出命名与 dmm_direct 直构路径一致：{番号}-thumb.jpg / {番号}-poster.jpg，
+    不依赖任何站点元数据。
+    """
+    from mdcx.core.image import cut_thumb_to_poster
+    from mdcx.models.model_types import CrawlersResult
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    base = output_dir / _safe_basename(number)
+    poster_target = base.with_name(base.name + "-poster.jpg")
+    thumb_target = base.with_name(base.name + "-thumb.jpg")
+
+    if not overwrite and await aiofiles.os.path.exists(poster_target) and await aiofiles.os.path.exists(thumb_target):
+        raise RuntimeError(f"{number}: 封面已存在（{poster_target.name}），如需覆盖请勾选“覆盖已有图片”")
+
+    size = await check_pic_async(image_path)
+    if not size or size[0] < 200 or size[1] < 200:
+        raise RuntimeError(f"上传的图片无效或过小: {size}")
+
+    # 原图作为 thumb（统一转存为 jpg 命名）；横图裁竖版 poster，竖图直接作 poster
+    await copy_file_async(image_path, thumb_target)
+    result = CrawlersResult.empty()
+    temp_cut = poster_target.with_suffix(".[CUT].jpg")
+    if await aiofiles.os.path.exists(temp_cut):
+        await delete_file_async(temp_cut)
+
+    width, height = size
+    if width > height:
+        cut_ok = await asyncio.to_thread(
+            cut_thumb_to_poster, result, thumb_target, temp_cut, result.scraping_type, safe_print
+        )
+        if cut_ok and await aiofiles.os.path.exists(temp_cut):
+            await move_file_async(temp_cut, poster_target)
+            safe_print(f"  upload: 横图 {size} 裁剪竖版成功 -> {poster_target}")
+        else:
+            # 裁剪失败时退回：原图同时作为 poster
+            await copy_file_async(image_path, poster_target)
+            safe_print("  upload: 裁剪失败，poster 使用原图")
+    else:
+        await copy_file_async(image_path, poster_target)
+        safe_print(f"  upload: 竖图直接作 poster {size}")
+
+    return BackfillResult(
+        number=number,
+        source="upload",
+        scraping_type=FixedScrapingType.AUTO,
+        mosaic="",
+        folder=output_dir,
+        thumb_path=thumb_target,
+        poster_path=poster_target,
+    )
+
+
 async def backfill_cover(
     item: str,
     *,

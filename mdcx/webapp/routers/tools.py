@@ -7,11 +7,13 @@
 import asyncio
 import csv
 import io
+import os
+import re
 import shutil
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -161,23 +163,35 @@ class CoverBackfillRequest(BaseModel):
     watermark: bool = False
 
 
-@router.post("/cover-backfill")
-async def cover_backfill(req: CoverBackfillRequest):
-    """封面补图（scripts.cover_backfill.backfill_cover）。"""
-    if not req.numbers:
-        raise HTTPException(status_code=422, detail="请提供番号列表")
-    from scripts.cover_backfill import backfill_cover
-
+def _cover_output_dir() -> Path:
+    """补图输出目录 = 设置里的成功输出目录；非绝对路径/未配置时回退数据目录。"""
     from mdcx.config.manager import manager
 
+    folder = str(manager.config.success_output_folder or "").split("|")[0].strip()
+    path = Path(folder)
+    if path.is_absolute():
+        return path
+    return manager.data_folder
+
+
+@router.post("/cover-backfill")
+async def cover_backfill(req: CoverBackfillRequest):
+    """封面补图（scripts.cover_backfill.backfill_cover）。输出到成功输出目录。"""
+    if not req.numbers:
+        raise HTTPException(status_code=422, detail="请提供番号列表")
+
+    output_dir = _cover_output_dir()
+
     async def _run():
+        from scripts.cover_backfill import backfill_cover
+
         results = []
         for number in req.numbers:
-            signal.show_log_text(f"开始补图: {number}")
+            signal.show_log_text(f"开始补图: {number}（输出目录: {output_dir}）")
             try:
                 result = await backfill_cover(
                     number,
-                    output_dir=manager.data_folder,
+                    output_dir=output_dir,
                     overwrite=req.overwrite,
                     watermark=req.watermark,
                 )
@@ -207,6 +221,201 @@ async def sync_gfriends(req: GfriendsRequest):
         signal.show_log_text(f"{'✅' if success else '🔴'} Gfriends 同步: {msg}")
 
     return await run_tool("Gfriends 同步", _run)
+
+
+@router.post("/cover-backfill/upload")
+async def cover_backfill_upload(
+    request: Request,
+    number: str = Query(...),
+    filename: str = Query("cover.jpg"),
+    overwrite: bool = Query(False),
+):
+    """上传本地图补图：图片作为 thumb，横图自动裁竖版 poster。
+
+    走 raw body 上传（避免引入 python-multipart 依赖），
+    输出与 dmm_direct 直构路径一致：{番号}-thumb.jpg / {番号}-poster.jpg。
+    输出到成功输出目录。
+    """
+    import time
+
+    import aiofiles
+
+    if not number.strip():
+        raise HTTPException(status_code=422, detail="请提供番号")
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=422, detail="未收到图片数据")
+    ext = Path(filename).suffix.lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+        raise HTTPException(status_code=422, detail=f"不支持的图片格式: {ext or '(缺扩展名)'}")
+
+    from scripts.cover_backfill import backfill_cover_from_upload
+
+    output_dir = _cover_output_dir()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    tmp = output_dir / f".[upload]{int(time.time() * 1000)}{ext}"
+    tmp.write_bytes(body)
+    try:
+        result = await backfill_cover_from_upload(number.strip(), tmp, output_dir, overwrite=overwrite)
+        signal.show_log_text(f"📤 上传补图完成 {result.number}: {result.thumb_path} / {result.poster_path}")
+        return {"ok": True, "number": result.number, "thumb": str(result.thumb_path), "poster": str(result.poster_path)}
+    finally:
+        await aiofiles.os.remove(tmp)
+
+
+# region 翻译测试（web 版翻译调试：文本直翻 / NFO 按正常流程翻译）
+
+
+class TranslateTestRequest(BaseModel):
+    mode: str  # text | nfo
+    text: str = ""
+    path: str = ""  # mode=nfo 时的 nfo 路径
+
+
+def _xml_text(root, tag: str) -> str:
+    el = root.find(tag)
+    return (el.text or "").strip() if el is not None and el.text else ""
+
+
+_CREDIT_RE = re.compile(r"\n*由\s*.+?\s*提供翻译\s*$")
+
+
+def _strip_translation_credit(text: str) -> str:
+    """去掉正常流程写在简介末尾的「由 xx 提供翻译」署名（core/nfo.py 写入）。"""
+    if not text:
+        return text
+    return _CREDIT_RE.sub("", text).rstrip()
+
+
+def _xml_set_text(root, tag: str, value: str) -> None:
+    import xml.etree.ElementTree as ET
+
+    el = root.find(tag)
+    if el is None:
+        el = ET.SubElement(root, tag)
+    el.text = value
+
+
+@router.post("/translate-test")
+async def translate_test(req: TranslateTestRequest):
+    """翻译测试。
+
+    text 模式：输入内容按正常流程的标题翻译逻辑处理（检测日/英文 → 按字段配置的目标
+    语言走配置的翻译引擎降级 → 简繁转换）。
+    nfo 模式：解析 NFO，用与刮削管线相同的 translate_title_outline 翻译标题/简介
+    （只动正常流程里会被翻译的部分），返回翻译后的 NFO 全文。
+    """
+    import xml.etree.ElementTree as ET  # noqa: S405 只处理用户自己的 nfo；读取用 defusedxml
+
+    import defusedxml.ElementTree as SafeET
+    from mdcx.config.manager import manager
+    from mdcx.core.translate import translate_title_outline
+    from mdcx.gen.field_enums import CrawlerResultFields
+    from mdcx.models.log_buffer import LogBuffer
+    from mdcx.models.model_types import CrawlersResult
+
+    def _field_info() -> dict:
+        t = manager.config.get_field_config(CrawlerResultFields.TITLE)
+        o = manager.config.get_field_config(CrawlerResultFields.OUTLINE)
+        return {
+            "title_language": t.language.value,
+            "title_translate": t.translate,
+            "outline_language": o.language.value,
+            "outline_translate": o.translate,
+            "translate_by": [str(e.value) for e in manager.config.translate_config.translate_by],
+        }
+
+    root_id = LogBuffer.new_root()  # 收集翻译引擎日志，随响应返回给弹窗展示
+
+    if req.mode == "text":
+        text = req.text.strip()
+        if not text:
+            raise HTTPException(status_code=422, detail="请输入要翻译的内容")
+        result = CrawlersResult.empty()
+        result.title = text
+        translated = await translate_title_outline(result, "", "")
+        log_text = LogBuffer.log().get()
+        return {
+            "mode": "text",
+            "original": text,
+            "content": translated.title,
+            "log": log_text,
+            "field_info": _field_info(),
+        }
+
+    if req.mode == "nfo":
+        p = safe_path(req.path)
+        try:
+            root = SafeET.parse(p).getroot()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=422, detail=f"NFO 解析失败: {e}") from e
+        title_src = _strip_translation_credit(_xml_text(root, "title"))
+        outline_src = _strip_translation_credit(_xml_text(root, "outline"))
+        plot_src = _strip_translation_credit(_xml_text(root, "plot"))
+        result = CrawlersResult.empty()
+        result.number = _xml_text(root, "num") or _xml_text(root, "number")
+        result.title = title_src
+        result.originaltitle = _xml_text(root, "originaltitle")
+        # 正常流程里简介翻译后写入 <plot>（core/nfo.py），<outline> 为同一来源：
+        # outline 元素为空时用 plot 作翻译源
+        result.outline = outline_src or plot_src
+        if not (result.title or result.outline):
+            raise HTTPException(status_code=422, detail="NFO 中没有 title/outline 可翻译")
+        translated = await translate_title_outline(result, "", result.number)
+        _xml_set_text(root, "title", translated.title)
+        _xml_set_text(root, "outline", translated.outline)
+        # plot 独立存在且内容不同时单独翻译（同一文本则复用 outline 的翻译结果）
+        if plot_src and plot_src != outline_src:
+            r2 = CrawlersResult.empty()
+            r2.number = result.number
+            r2.outline = plot_src
+            r2 = await translate_title_outline(r2, "", result.number)
+            _xml_set_text(root, "plot", r2.outline)
+        elif plot_src:
+            _xml_set_text(root, "plot", translated.outline)
+        tree = ET.ElementTree(root)
+        ET.indent(tree, space="  ")
+        content = ET.tostring(root, encoding="unicode", xml_declaration=True)
+        return {"mode": "nfo", "path": str(p), "content": content, "log": LogBuffer.log().get(), "field_info": _field_info()}
+
+    raise HTTPException(status_code=422, detail=f"未知模式: {req.mode}")
+
+
+class TranslateSaveRequest(BaseModel):
+    path: str
+    content: str
+
+
+@router.post("/translate-test/save")
+def translate_test_save(req: TranslateSaveRequest):
+    """把翻译后的 NFO 覆盖保存：原文件重命名为 .bak 备份，新内容写入原路径。"""
+    import os
+
+    p = safe_path(req.path)
+    if p.suffix.lower() != ".nfo":
+        raise HTTPException(status_code=422, detail="只支持覆盖保存 .nfo 文件")
+    if not req.content.strip():
+        raise HTTPException(status_code=422, detail="内容为空，拒绝保存")
+
+    tmp = p.with_name(p.name + ".[new].tmp")
+    tmp.write_text(req.content, encoding="utf-8")
+    bak = p.with_name(p.name + ".bak")
+    try:
+        if bak.exists():
+            bak.unlink()
+        p.rename(bak)  # 原始 NFO 备份为 .bak
+        os.replace(tmp, p)
+    except Exception:
+        # 失败回滚：备份恢复为原文件
+        if not p.exists() and bak.exists():
+            bak.rename(p)
+        tmp.unlink(missing_ok=True)
+        raise
+    signal.show_log_text(f"🌐 翻译结果已覆盖保存: {p}（原文件备份为 {bak.name}）")
+    return {"ok": True, "path": str(p), "bak": str(bak)}
+
+
+# endregion
 
 
 class ActorDbRequest(BaseModel):

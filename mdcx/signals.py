@@ -1,8 +1,8 @@
-"""UI 事件总线。
+"""事件总线（无头版）。
 
 业务层通过 `from ..signals import signal` 获取全局总线，向 UI 层回传日志、进度、结果等事件。
-桌面模式（PyQt6）由 `Signals(QObject)` 承载，controllers 连接 Qt 信号；无头模式（web 后端，
-未安装 PyQt6）由 `WebSignalBus` 承载，webapp 订阅事件并经 WebSocket 推送给前端。
+由 `WebSignalBus` 承载：事件先写入 replay 环形缓冲（供 WS 客户端断线重连补发），再通知
+订阅者；webapp 订阅事件并经 WebSocket 推送给前端。
 
 `signal` 是转发代理：业务模块在导入时绑定的始终是同一个代理实例，代理把属性读写转发给
 当前实现，因此 set_signal() 在任何导入时机之后切换实现都能生效，不会留下旧引用。
@@ -17,14 +17,6 @@ from typing import Any, Literal
 
 from .models.model_types import ShowData
 from .utils import singleton
-
-try:
-    from PyQt6.QtCore import QObject, pyqtSignal
-
-    _QT_AVAILABLE = True
-except ImportError:  # 无头部署（web 后端）不安装 PyQt6
-    _QT_AVAILABLE = False
-
 
 # 事件名清单：与 Signals 上的 Qt 信号一一对应，WebSignalBus 按此建同名事件
 EVENT_NAMES: tuple[str, ...] = (
@@ -44,73 +36,6 @@ EVENT_NAMES: tuple[str, ...] = (
     "exec_show_list_name",
     "logs_failed_show",
 )
-
-
-if _QT_AVAILABLE:
-
-    @singleton
-    class Signals(QObject):
-        # region signal
-        log_text = pyqtSignal(str)
-        scrape_info = pyqtSignal(str)
-        net_info = pyqtSignal(str)
-        exec_set_main_info = pyqtSignal(ShowData)  # 主界面更新番号信息
-        change_buttons_status = pyqtSignal()
-        reset_buttons_status = pyqtSignal()
-        set_label_file_path = pyqtSignal(str)
-        label_result = pyqtSignal(str)
-        logs_failed_settext = pyqtSignal(str)  # 失败面板添加信息日志信号
-        view_success_file_settext = pyqtSignal(str)
-        exec_set_processbar = pyqtSignal(int)  # 进度条信号量
-        exec_exit_app = pyqtSignal()  # 退出信号量
-        view_failed_list_settext = pyqtSignal(str)
-        exec_show_list_name = pyqtSignal(str, ShowData, str)
-        logs_failed_show = pyqtSignal(str)  # 失败面板添加信息日志信号
-
-        # endregion
-        def __init__(self):
-            super().__init__()
-            self.log_lock = threading.Lock()
-            self.detail_log_list = []
-            self.stop = False
-
-        def add_log(self, *text):
-            """打印日志到日志页下方详情框"""
-            if self.stop:
-                return
-            try:
-                with self.log_lock:
-                    self.detail_log_list.append(f" ⏰ {time.strftime('%H:%M:%S', time.localtime())} {' '.join(text)}")
-            except Exception:
-                pass
-
-        def get_log(self):
-            with self.log_lock:
-                text = "\n".join(self.detail_log_list)
-                self.detail_log_list = []
-            return text
-
-        def show_traceback_log(self, text):
-            with suppress(Exception):
-                print(text)
-            self.add_log(text)
-
-        def show_log_text(self, text):
-            self.log_text.emit(text)
-
-        def show_scrape_info(self, before_info=""):
-            self.scrape_info.emit(before_info)
-
-        def show_net_info(self, text):
-            self.net_info.emit(text)
-
-        def set_main_info(self, show_data=None):
-            if show_data is None:
-                show_data = ShowData.empty()
-            self.exec_set_main_info.emit(show_data)
-
-        def show_list_name(self, status: Literal["succ", "fail"], show_data: ShowData, real_number=""):
-            self.exec_show_list_name.emit(status, show_data, real_number)
 
 
 class _Event:
@@ -244,7 +169,7 @@ class _BusEvent(_Event):
         super().emit(*args)
 
 
-signal_qt = Signals() if _QT_AVAILABLE else WebSignalBus()  # 无头环境下桌面实现不可用，用总线兜底
+signal_qt = WebSignalBus()  # 兼容历史名称
 
 
 class _SignalProxy:

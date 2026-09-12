@@ -1,10 +1,44 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, mediaUrl, videoUrl, type ResultItem, type ResumeInfo } from '../api/client'
 import { useScrapeStore } from '../stores/scrape'
+import DirPicker from '../components/DirPicker.vue'
 
 const scrape = useScrapeStore()
+
+// 媒体路径（开始刮削左侧展示，可就地修改并自动保存；手动输入防抖）
+const mediaPath = ref('')
+const config = ref<Record<string, any> | null>(null)
+let saveTimer: number | undefined
+
+async function loadConfig() {
+  try {
+    config.value = (await api.config()).config
+    mediaPath.value = String(config.value?.media_path ?? '')
+  } catch {
+    /* ignore */
+  }
+}
+
+function onMediaPathChange(value: string | string[]) {
+  mediaPath.value = String(value)
+  window.clearTimeout(saveTimer)
+  saveTimer = window.setTimeout(() => void saveMediaPath(), 600)
+}
+
+async function saveMediaPath() {
+  if (!config.value) return
+  config.value.media_path = mediaPath.value
+  try {
+    await api.putConfig(config.value)
+    ElMessage.success('媒体路径已保存')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+onMounted(loadConfig)
 
 const activeTab = ref<'succ' | 'fail'>('succ')
 const selected = ref<ResultItem | null>(null)
@@ -160,6 +194,15 @@ function onSelectRow(item: ResultItem) {
 <template>
   <div class="scrape-view" @click="closeMenu">
     <el-card class="toolbar" shadow="never">
+      <div class="media-path-box" title="媒体路径（刮削的目标目录，可就地修改）">
+        <span class="media-label">媒体路径</span>
+        <DirPicker
+          :model-value="mediaPath"
+          append-sep="|"
+          placeholder="先在右侧 📁 选择媒体目录"
+          @update:model-value="onMediaPathChange"
+        />
+      </div>
       <el-button type="primary" :disabled="scrape.running || scrape.stopping" @click="onStart">
         开始刮削
       </el-button>
@@ -307,6 +350,26 @@ function onSelectRow(item: ResultItem) {
   align-items: center;
   gap: 4px;
   padding: 10px 16px;
+}
+.media-path-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+}
+.media-label {
+  font-size: 13px;
+  color: #606266;
+  flex-shrink: 0;
+}
+.media-path-box .dir-picker {
+  flex: 1;
+  min-width: 0;
+}
+.media-path-box :deep(.picker-input .el-input__inner) {
+  font-size: 12px;
 }
 .hint {
   margin-left: auto;
