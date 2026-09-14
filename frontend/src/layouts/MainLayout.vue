@@ -8,10 +8,13 @@ const route = useRoute()
 const ws = useWsStore()
 const scrape = useScrapeStore()
 
-const countsText = computed(
-  () =>
-    `成功 ${scrape.status.counts.succ} / 失败 ${scrape.status.counts.fail} / 已完成 ${scrape.status.counts.done} / 共 ${scrape.status.counts.total}`,
-)
+const countsText = computed(() => {
+  const c = scrape.status.counts
+  const parts = [`成功 ${c.succ}`, `失败 ${c.fail}`, `已完成 ${c.done}`, `共 ${c.total}`]
+  if (c.skipped > 0) parts.push(`跳过 ${c.skipped}`)
+  if (c.restored > 0) parts.push(`恢复重刮 ${c.restored}`)
+  return parts.join(' / ')
+})
 
 onMounted(() => {
   ws.connect()

@@ -546,6 +546,14 @@ class FileScraper:
             else:  # 所有来源都无此字段
                 reduced.field_log += "\n    🔴 所有来源均无数据"
 
+        # 来源汇总：每个字段一行「字段=站点」，debug 时一眼定位错误数据来自哪个站
+        if reduced.field_sources:
+            summary = ", ".join(
+                f"{field.value}={site}" for field, site in reduced.field_sources.items() if site
+            )
+            if summary:
+                reduced.field_log += f"\n\n    🧭 来源汇总: {summary}"
+
         # 所有来源均失败
         if len(all_res) == 0:
             reason_text = "；".join(f"{site.value}: {detail}" for site, (_reason, detail) in failure_reasons.items())

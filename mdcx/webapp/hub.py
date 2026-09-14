@@ -16,6 +16,25 @@ from .jsonable import to_jsonable
 
 _MAX_CLIENT_QUEUE = 2000
 
+# 断线重连补发的事件范围：日志/进度/状态提示类。结果列表（exec_show_list_name）
+# 不补发——job_manager.results 是权威累计值，重连后由前端重新 GET /api/scrape/results
+# 同步，避免逐条重放造成重复行（旧版每个新连接都全量重放缓冲，重连后成功列表
+# 会出现成批重复、刷新才消失）
+REPLAYABLE_EVENTS = frozenset(
+    {
+        "log_text",
+        "net_info",
+        "scrape_info",
+        "set_label_file_path",
+        "label_result",
+        "logs_failed_settext",
+        "logs_failed_show",
+        "view_failed_list_settext",
+        "view_success_file_settext",
+        "exec_set_processbar",
+    }
+)
+
 
 class EventHub:
     def __init__(self, bus: WebSignalBus):
@@ -37,8 +56,8 @@ class EventHub:
             self._unsubscribe()
             self._unsubscribe = None
 
-    def _on_event(self, name: str, args: tuple) -> None:
-        payload = {"type": "event", "event": name, "args": [to_jsonable(a) for a in args]}
+    def _on_event(self, name: str, args: tuple, seq: int = 0) -> None:
+        payload = {"type": "event", "seq": seq, "event": name, "args": [to_jsonable(a) for a in args]}
         loop = self._loop
         if loop is None or loop.is_closed():
             return
@@ -59,8 +78,14 @@ class EventHub:
         except RuntimeError:  # 循环已关闭（应用退出中）
             pass
 
-    async def connect(self, ws: WebSocket) -> None:
-        """接受一个 WS 客户端：先发快照（补发缓冲事件），再持续推送实时事件。"""
+    async def connect(self, ws: WebSocket, after: int = 0) -> None:
+        """接受一个 WS 客户端：发快照 + 按 after 补发缺失事件，最后发 synced 标记。
+
+        - after=客户端已处理的最大 seq：仅补发 (after, ∞) 内的可重放事件；
+          客户端凭 seq 去重（补发与实时推送在注册瞬间可能重叠）
+        - 补发与实时推送之间若有空洞（缓冲已溢出淘汰），客户端凭 synced 后
+          的 seq 跳变检测并整体重新拉取
+        """
         await ws.accept()
         queue: asyncio.Queue = asyncio.Queue(maxsize=_MAX_CLIENT_QUEUE)
         with self._lock:
@@ -68,9 +93,12 @@ class EventHub:
             client_id = self._next_id
             self._clients[client_id] = queue
         try:
-            await ws.send_json({"type": "hello", "clients": len(self._clients)})
-            for name, args in self.bus.replay_events():
-                await ws.send_json({"type": "event", "event": name, "args": [to_jsonable(a) for a in args]})
+            await ws.send_json({"type": "hello", "clients": len(self._clients), "seq": self.bus.last_seq})
+            for seq, name, args in self.bus.replay_events(after):
+                if name not in REPLAYABLE_EVENTS:
+                    continue
+                await ws.send_json({"type": "event", "seq": seq, "event": name, "args": [to_jsonable(a) for a in args]})
+            await ws.send_json({"type": "synced"})
             while True:
                 payload = await queue.get()
                 await ws.send_json(payload)

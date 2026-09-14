@@ -331,11 +331,26 @@ def get_file_number(filepath: str, escape_string_list: list[str]) -> str:
         file_number = temp[0] + "-" + temp[1]
 
     else:
-        temp_name = re.sub(r"[【(（\[].+?[]）)】]", "", file_name).strip("@. ")  # 去除[]
-        temp_name = unicodedata.normalize("NFC", temp_name)  # Mac 把会拆成两个字符，即 NFD，而网页请求使用的是 NFC
-        with contextlib.suppress(Exception):
-            temp_name = temp_name.encode("cp932").decode("shift_jis")  # 转换为常见日文，比如～ 转换成 〜
-        file_number = temp_name
+        # 场景发布名兜底（如 A-122B-016.2026.1080p.DMM.WEB-DL.AAC2.0.H.264-MTeam）：
+        # 所有番号特征分支都未命中时，若首个点分段本身像番号（字母+数字混合的短
+        # token），取它而不是整串发布名——否则整串进入番号后 DMM 品番路由永远打不中，
+        # 后续站点只能靠关键词模糊搜索，极易配错影片
+        head = filename.split(".", 1)[0].strip("-_. ")
+        if (
+            "." in filename
+            and 3 <= len(head) <= 32
+            and re.search(r"[A-Za-z]", head)
+            and re.search(r"\d", head)
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9+&-]*", head)
+            and not re.fullmatch(r"\d{3,4}[PIK]", head)  # 排除 1080P/720I 等分辨率开头
+        ):
+            file_number = head
+        else:
+            temp_name = re.sub(r"[【(（\[].+?[]）)】]", "", file_name).strip("@. ")  # 去除[]
+            temp_name = unicodedata.normalize("NFC", temp_name)  # Mac 把会拆成两个字符，即 NFD，而网页请求使用的是 NFC
+            with contextlib.suppress(Exception):
+                temp_name = temp_name.encode("cp932").decode("shift_jis")  # 转换为常见日文，比如～ 转换成 〜
+            file_number = temp_name
 
     if file_number.startswith("FC-"):
         file_number = file_number.replace("FC-", "FC2-")

@@ -437,8 +437,11 @@ async def get_file_info_v2(file_path: Path, copy_sub: bool = True) -> FileInfo:
             movie_number = get_file_number(file_path_str, manager.computed.escape_string_list)
 
         # 259LUXU-1111, 非mgstage、avsex去除前面的数字前缀
-        temp_n = re.findall(r"\d{3,}([a-zA-Z]+-\d+)", movie_number)
-        optional_data["short_number"] = temp_n[0] if temp_n else ""
+        # 锚定开头：只剥「纯数字开头」的前缀（259LUXU/300MIUM）。A-122B-016 这类
+        # 字母开头的番号此前会被误剥成 B-016（另一部真实存在的影片），导致所有
+        # 站点按错误番号搜索（实测 dmm_api 搜 b00016 命中无关影片）
+        m_short = re.match(r"\d{3,}([a-zA-Z]+-\d+)", movie_number)
+        optional_data["short_number"] = m_short.group(1) if m_short else ""
 
         # 去掉各种乱七八糟的字符
         file_name_cd = remove_escape_string(file_name, "-").replace(movie_number, "-").replace("--", "-").strip()

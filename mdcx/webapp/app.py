@@ -36,6 +36,14 @@ def _check_token(supplied: str) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # 桌面版启动时加载历史成功列表（success.txt），「跳过已刮削文件」等选项依赖它；
+    # get_success_list 内部走 executor.run（阻塞后台循环），仅在启动时执行一次
+    from mdcx.base.file import get_success_list
+
+    try:
+        get_success_list()
+    except Exception:
+        pass  # success.txt 缺失/损坏不阻塞启动
     hub.attach()
     yield
     hub.detach()
@@ -87,11 +95,11 @@ def create_app() -> FastAPI:
     app.include_router(emby_router.router)
 
     @app.websocket("/ws")
-    async def ws_endpoint(websocket: WebSocket, token: str = Query("")):
+    async def ws_endpoint(websocket: WebSocket, token: str = Query(""), after: int = Query(0)):
         if not _check_token(token):
             await websocket.close(code=4401)
             return
-        await hub.connect(websocket)
+        await hub.connect(websocket, after=max(0, after))
 
     dist = _frontend_dist()
     if dist is not None:

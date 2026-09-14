@@ -116,3 +116,81 @@ async def test_javbus_crawler_rotates_domain_on_failure():
     assert client.requested[0].startswith("https://www.dmmsee.cyou")
     assert any(not u.startswith("https://www.dmmsee.cyou") for u in client.requested)
     assert crawler.base_url != "https://www.dmmsee.cyou"
+
+
+class WrongMovieJavbusClient:
+    """直连 /A-122B-016 时站点返回了别的影片（B-016 拘束女装美少年）的页面。"""
+
+    async def get_text(self, url, **kwargs):
+        return (
+            """
+            <html>
+              <body>
+                <li class="active"><a>有碼</a></li>
+                <h3>B-016 拘束女装美少年</h3>
+                <p><span class="header">識別碼:</span><span>B-016</span></p>
+                <p><span class="header">發行日期:</span>2016/02/24</p>
+                <a class="bigImage" href="/pics/cover/b00016_b.jpg"></a>
+                <div class="star-name"><a>赤羽ゆり</a></div>
+              </body>
+            </html>
+            """,
+            "",
+        )
+
+
+@pytest.mark.asyncio
+async def test_javbus_rejects_wrong_movie_page():
+    """A-122B-016 案例回归：页面番号与请求不一致必须拒绝（run() 包装为 error）。"""
+    crawler = JavbusCrawler(client=WrongMovieJavbusClient(), base_url="https://www.javbus.com")
+    res = await crawler.run(
+        CrawlerInput(
+            appoint_number="",
+            appoint_url="",
+            file_path=None,
+            mosaic="",
+            number="A-122B-016",
+            short_number="",
+            language=Language.UNDEFINED,
+            org_language=Language.UNDEFINED,
+        )
+    )
+    assert res.data is None
+    assert "番号不匹配" in str(res.debug_info.error)
+
+
+class NoNumberElementJavbusClient:
+    """欧美页等无識別碼元素时保持原行为（不校验、正常解析）。"""
+
+    async def get_text(self, url, **kwargs):
+        return (
+            """
+            <html>
+              <body>
+                <h3>Some European Movie Scene</h3>
+                <a class="bigImage" href="/pics/cover/xxx_b.jpg"></a>
+              </body>
+            </html>
+            """,
+            "",
+        )
+
+
+@pytest.mark.asyncio
+async def test_javbus_without_number_element_keeps_old_behavior():
+    crawler = JavbusCrawler(client=NoNumberElementJavbusClient(), base_url="https://www.javbus.com")
+    res = await crawler.run(
+        CrawlerInput(
+            appoint_number="",
+            appoint_url="",
+            file_path=None,
+            mosaic="",
+            number="SEXART-111",
+            short_number="",
+            language=Language.UNDEFINED,
+            org_language=Language.UNDEFINED,
+        )
+    )
+    assert res.debug_info.error is None
+    assert res.data is not None
+    assert res.data.title == "Some European Movie Scene"

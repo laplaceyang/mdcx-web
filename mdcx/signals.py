@@ -65,7 +65,8 @@ class WebSignalBus:
 
     - 同名事件属性（.emit/.connect/.disconnect），emit 先写入 replay 环形缓冲再通知
       订阅者，供 WS 客户端断线重连后补发错过的日志/进度
-    - 订阅回调签名统一为 callback(event_name, args)，在发射者线程同步执行；
+    - 每条事件带全局递增 seq：WS 客户端凭 lastSeq 去重重连补发、检测丢失
+    - 订阅回调签名统一为 callback(event_name, args, seq)，在发射者线程同步执行；
       跨线程投递（核心跑在 executor 的后台事件循环）由订阅者自行 call_soon_threadsafe
     - add_log/get_log 保留原详情日志缓冲语义
     """
@@ -75,8 +76,12 @@ class WebSignalBus:
         self.detail_log_list: list[str] = []
         self.stop = False
         self._events: dict[str, _BusEvent] = {}
-        self._replay: deque[tuple[str, tuple[Any, ...]]] = deque(maxlen=replay_size)
+        self._replay: deque[tuple[int, str, tuple[Any, ...]]] = deque(maxlen=replay_size)
         self._replay_lock = threading.Lock()
+        self._seq = 0
+        # emit → 订阅回调在同一线程同步执行，用 thread-local 传递本次事件的 seq，
+        # 避免多线程并发 emit 时共享变量串号；支持回调内嵌套 emit（弹出时恢复）
+        self._emit_tls = threading.local()
         for name in EVENT_NAMES:
             self._events[name] = _BusEvent(self, name)
 
@@ -126,17 +131,17 @@ class WebSignalBus:
 
     # endregion
 
-    def subscribe(self, callback: Callable[[str, tuple[Any, ...]], None]) -> Callable[[], None]:
+    def subscribe(self, callback: Callable[[str, tuple[Any, ...], int], None]) -> Callable[[], None]:
         """订阅全部事件，返回取消订阅函数。
 
         与事件本身的 Qt 风格透传（emit(*args) 原样转发）不同，这里统一聚合签名：
-        callback(event_name, args_tuple)。
+        callback(event_name, args_tuple, seq)。
         """
         wired: list[tuple[_Event, Callable[..., None]]] = []
         for name, event in self._events.items():
 
             def on_event(*args: Any, _name: str = name) -> None:
-                callback(_name, args)
+                callback(_name, args, getattr(self._emit_tls, "seq", 0))
 
             event.connect(on_event)
             wired.append((event, on_event))
@@ -147,17 +152,26 @@ class WebSignalBus:
 
         return unsubscribe
 
-    def replay_events(self) -> list[tuple[str, tuple[Any, ...]]]:
+    def replay_events(self, after: int = 0) -> list[tuple[int, str, tuple[Any, ...]]]:
+        """返回 seq > after 的事件（供 WS 断线重连补发）。"""
         with self._replay_lock:
-            return list(self._replay)
+            return [(seq, name, args) for seq, name, args in self._replay if seq > after]
 
-    def _record(self, name: str, args: tuple[Any, ...]) -> None:
+    @property
+    def last_seq(self) -> int:
+        """最近一条已记录事件的 seq（并发下读到的可能略旧，仅用于展示/握手指引）。"""
         with self._replay_lock:
-            self._replay.append((name, args))
+            return self._seq
+
+    def _record(self, name: str, args: tuple[Any, ...]) -> int:
+        with self._replay_lock:
+            self._seq += 1
+            self._replay.append((self._seq, name, args))
+            return self._seq
 
 
 class _BusEvent(_Event):
-    """带总线记录的事件：emit 时先写 replay 缓冲。"""
+    """带总线记录的事件：emit 时先写 replay 缓冲，再以 thread-local seq 通知订阅者。"""
 
     def __init__(self, bus: WebSignalBus, name: str) -> None:
         super().__init__()
@@ -165,8 +179,17 @@ class _BusEvent(_Event):
         self._name = name
 
     def emit(self, *args: Any) -> None:
-        self._bus._record(self._name, args)
-        super().emit(*args)
+        seq = self._bus._record(self._name, args)
+        tls = self._bus._emit_tls
+        prev = getattr(tls, "seq", None)
+        tls.seq = seq
+        try:
+            super().emit(*args)
+        finally:
+            if prev is None:
+                del tls.seq
+            else:
+                tls.seq = prev
 
 
 signal_qt = WebSignalBus()  # 兼容历史名称

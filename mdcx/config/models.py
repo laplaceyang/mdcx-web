@@ -740,12 +740,25 @@ class Config(BaseModel):
     verify_ssl: bool = Field(default=True, title="HTTPS证书校验（关闭仅用于自签名代理/MITM调试）")
     timeout: int = Field(default=10, title="超时")
     retry: int = Field(default=3, title="重试")
+    user_agent: str = Field(
+        default="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        title="站点 User-Agent",
+        description="以浏览器身份访问站点/接口用的 UA，默认值与 MoviePilot 一致；留空时使用同款内置默认。",
+    )
     theporndb_api_token: str = Field(default="", title="Theporndb API令牌")
     tmdb_api_base: str = Field(default="api.tmdb.org", title="TMDB API地址")
     tmdb_api_key: str = Field(default="", title="TMDB API Key")
-    javdb: str = Field(default="", title="Javdb")
-    fc2ppvdb: str = Field(default="", title="FC2PPVDB")
-    javbus: str = Field(default="", title="Javbus")
+    javdb: str = Field(
+        default="",
+        title="JavDB Cookie",
+        description="JavDB 的登录 Cookie，从浏览器整串复制粘贴；留空则匿名访问（易被 CF 拦截）",
+    )
+    fc2ppvdb: str = Field(
+        default="",
+        title="FC2PPVDB Cookie",
+        description="fc2cmadb.com 的登录 Cookie。该站现在必须登录才能看详情页，未登录时一律 404",
+    )
+    javbus: str = Field(default="", title="JavBus Cookie", description="JavBus 的登录 Cookie，从浏览器整串复制粘贴")
     dmm_api_id: str = Field(
         default="",
         title="DMM Affiliate API ID",

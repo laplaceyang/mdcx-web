@@ -88,6 +88,26 @@ class MissavApiCrawler(BaseCrawler):
     def _clean_name(name: str) -> str:
         return (name or "").strip()
 
+    @staticmethod
+    def _pick_matching_item(recomms: list, q: str):
+        """从 Recombee 搜索结果中挑选 id 与请求番号匹配的条目。
+
+        优先精确 id 匹配, 其次 id 前缀匹配(含 -uncensored-leak)，再退到
+        alphanumeric 等价/前缀匹配（id 分隔符形态不同的情况）
+        绝不能无条件退回首条：Recombee 模糊搜索的首条可能是完全无关的影片
+        （实测搜 A-122B-016 首条命中 ymrk-016），元数据会张冠李戴
+        """
+        q_alnum = q.replace("-", "")
+        for it in recomms:
+            item_id = (it.get("id") or "").lower()
+            if item_id == q or item_id.replace("-", "") == q_alnum:
+                return it
+        for it in recomms:
+            item_id = (it.get("id") or "").lower()
+            if item_id.startswith(q) or item_id.replace("-", "").startswith(q_alnum):
+                return it
+        return None
+
     async def _recombee_search(self, ctx: Context, number: str):
         q = self._normalize_number(number)
         path = "/search/users/anonymous/items/"
@@ -113,14 +133,10 @@ class MissavApiCrawler(BaseCrawler):
         if not recomms:
             ctx.debug("[MISSAV-API] Recombee 无结果")
             return None
-        # 优先精确 id 匹配, 其次 id 前缀匹配(含 -uncensored-leak), 最后退回首条
-        for it in recomms:
-            if (it.get("id") or "").lower() == q:
-                return it
-        for it in recomms:
-            if (it.get("id") or "").lower().startswith(q):
-                return it
-        return recomms[0]
+        item = self._pick_matching_item(recomms, q)
+        if item is None:
+            ctx.debug(f"[MISSAV-API] {len(recomms)} 条搜索结果均无 id 匹配，全部丢弃")
+        return item
 
     def _build_data(self, item: dict, input_number: str) -> CrawlerData:
         values = item.get("values") or {}

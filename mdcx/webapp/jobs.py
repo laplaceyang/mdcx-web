@@ -36,7 +36,7 @@ class ScrapeJobManager:
         bus.subscribe(self._on_event)
 
     # region 总线事件 → 状态/结果累积
-    def _on_event(self, name: str, args: tuple) -> None:
+    def _on_event(self, name: str, args: tuple, seq: int = 0) -> None:
         if name == "exec_show_list_name":
             status, show_data, real_number = args
             with self._lock:
@@ -140,6 +140,8 @@ class ScrapeJobManager:
                 "fail": Flags.fail_count,
                 "done": Flags.scrape_done,
                 "total": Flags.total_count,
+                "skipped": Flags.skipped_count,
+                "restored": Flags.restored_count,
             },
             "elapsed": round(time.time() - Flags.start_time, 1) if running and Flags.start_time else 0.0,
         }

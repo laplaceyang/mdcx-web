@@ -268,6 +268,7 @@ async def cover_backfill_upload(
 
 class TranslateTestRequest(BaseModel):
     mode: str  # text | nfo
+    field: str = "title"  # text 模式翻译的字段：title | outline（创建 NFO 时复用翻译 originaltitle/originalplot）
     text: str = ""
     path: str = ""  # mode=nfo 时的 nfo 路径
 
@@ -331,15 +332,21 @@ async def translate_test(req: TranslateTestRequest):
         text = req.text.strip()
         if not text:
             raise HTTPException(status_code=422, detail="请输入要翻译的内容")
+        if req.field not in ("title", "outline"):
+            raise HTTPException(status_code=422, detail=f"未知字段: {req.field}")
         result = CrawlersResult.empty()
-        result.title = text
+        if req.field == "outline":
+            result.outline = text
+        else:
+            result.title = text
         translated = await translate_title_outline(result, "", "")
-        log_text = LogBuffer.log().get()
+        # 标题与简介语言均设为日文时返回 None = 保留原文不翻译
+        content = text if translated is None else (translated.outline if req.field == "outline" else translated.title)
         return {
             "mode": "text",
             "original": text,
-            "content": translated.title,
-            "log": log_text,
+            "content": content,
+            "log": LogBuffer.log().get(),
             "field_info": _field_info(),
         }
 
