@@ -5,12 +5,13 @@ XML 解析用 defusedxml；写回保持 utf-8 缩进格式。
 """
 
 import json
+import re
 import xml.etree.ElementTree as ET  # noqa: S405 写回的是用户自己的媒体 nfo；读取用 defusedxml
 from pathlib import Path
 from typing import Any
 
 import defusedxml.ElementTree as SafeET
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from mdcx.signals import signal
@@ -222,6 +223,227 @@ def delete_item(path: str):
     p.unlink()
     signal.show_log_text(f"🗑️ NFO 已删除: {p}")
     return {"ok": True}
+
+
+class NfoCreate(BaseModel):
+    dir: str = ""  # 保存目录；留空 = 成功输出目录（非绝对路径时回退配置数据目录）
+    subfolder: str = ""  # 番号子目录（手动刮削）：在 dir 下再建一层，清洗规则同文件名
+    filename: str = ""  # 文件名（可省略 .nfo 后缀）；留空 = 番号
+    overwrite: bool = False
+    fields: dict = {}
+
+
+def _as_str(fields: dict, key: str) -> str:
+    return str(fields.get(key) or "").strip()
+
+
+def _as_list(fields: dict, key: str) -> list[str]:
+    """演员/标签列表：接受 list 或逗号/换行分隔的字符串。"""
+    value = fields.get(key)
+    if value is None:
+        return []
+    raw = value if isinstance(value, list) else re.split(r"[,，\n]", str(value))
+    return [str(v).strip() for v in raw if str(v).strip()]
+
+
+def _default_create_dir() -> Path:
+    """创建 NFO 的默认保存目录 = 成功输出目录（存在时）；否则回退配置数据目录。"""
+    from mdcx.config.manager import manager
+
+    folder = str(manager.config.success_output_folder or "").split("|")[0].strip()
+    path = Path(folder)
+    if path.is_absolute() and path.exists():
+        return path
+    return manager.data_folder
+
+
+def _build_nfo_xml(fields: dict) -> str:
+    """按正常刮削流程（core/nfo.py）的元素顺序生成 NFO，空字段跳过。"""
+    from xml.sax.saxutils import escape
+
+    plot = _as_str(fields, "plot")
+    originalplot = _as_str(fields, "originalplot").replace("\r\n", "\n").replace("\r", "\n")
+    release = _as_str(fields, "release")
+    number = _as_str(fields, "number")
+    title = _as_str(fields, "title")
+    originaltitle = _as_str(fields, "originaltitle")
+    country = _as_str(fields, "countrycode")
+    series = _as_str(fields, "series")
+    studio = _as_str(fields, "studio")
+    publisher = _as_str(fields, "publisher")
+    actors = _as_list(fields, "actors")
+    genres = _as_list(fields, "genres")
+
+    tagline = _as_str(fields, "tagline")
+    if not tagline and release:
+        from mdcx.config.manager import manager
+
+        tagline = str(manager.config.nfo_tagline or "").replace("release", release)
+
+    lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', "<movie>"]
+
+    def add(tag: str, value: str, indent: str = "  ") -> None:
+        if value:
+            lines.append(f"{indent}<{tag}>{escape(value)}</{tag}>")
+
+    add("plot", plot)
+    add("originalplot", originalplot)
+    add("tagline", tagline)
+    for tag in ("premiered", "releasedate", "release"):
+        add(tag, release)
+    add("num", number)
+    add("title", title)
+    add("originaltitle", originaltitle)
+    add("countrycode", country)
+    for name in actors:
+        lines.append("  <actor>")
+        add("name", name, indent="    ")
+        lines.append("    <type>Actor</type>")
+        lines.append("  </actor>")
+    add("series", series)
+    add("studio", studio)
+    add("maker", studio)
+    add("publisher", publisher)
+    add("label", publisher)
+    for genre in genres:
+        add("genre", genre)
+
+    lines.append("</movie>")
+    return "\n".join(lines) + "\n"
+
+
+def _create_base_name(filename: str, number: str) -> str:
+    """创建 NFO 的目标文件名（不含 .nfo），NFO 与补图共用：清洗 Windows 非法字符与首尾空白/点。"""
+    name = (filename or number).strip()
+    name = re.sub(r'[\\/:*?"<>|\r\n]', "_", name).strip(" .")
+    if name.lower().endswith(".nfo"):
+        name = name[:-4]
+    return name
+
+
+def _resolve_create_dir(dir_value: str, subfolder: str = "") -> Path:
+    """创建 NFO 的落盘目录：dir 留空 = 成功输出目录，subfolder（番号）再建一层；统一清洗。
+
+    macOS 上 /var 等符号链接路径不 resolve 时无法与白名单匹配，故统一 resolve。
+    """
+    directory = (Path(dir_value) if dir_value.strip() else _default_create_dir()).resolve()
+    sub = _create_base_name(subfolder, "")
+    if sub:
+        directory = directory / sub
+    return directory
+
+
+@router.post("/create")
+def create_nfo(req: NfoCreate):
+    """创建 NFO：表单字段按正常流程的元素顺序写成 .nfo 文件（工具页「创建 NFO」）。"""
+    fields = req.fields or {}
+    directory = _resolve_create_dir(req.dir, req.subfolder)
+    _check_dir(directory)
+
+    name = _create_base_name(req.filename, _as_str(fields, "number"))
+    if not name:
+        raise HTTPException(status_code=422, detail="请填写文件名或番号")
+    name += ".nfo"
+
+    target = directory / name
+    if target.exists() and not req.overwrite:
+        raise HTTPException(status_code=409, detail=f"文件已存在: {target}")
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        content = _build_nfo_xml(fields)
+        target.write_text(content, encoding="utf-8")
+    except OSError as e:
+        raise HTTPException(status_code=422, detail=f"NFO 写入失败: {e}") from e
+    signal.show_log_text(f"🆕 NFO 已创建: {target}")
+    return {"ok": True, "path": str(target), "content": content}
+
+
+@router.post("/create-cover")
+async def create_nfo_cover(
+    request: Request,
+    name: str = Query(..., description="NFO 文件名（可带 .nfo），图片基础名与其一致"),
+    dir: str = Query("", description="保存目录；留空 = 成功输出目录"),
+    subfolder: str = Query("", description="番号子目录，与 NFO 落盘目录一致"),
+    filename: str = Query("cover.jpg", description="上传图片原始文件名，用于识别扩展名"),
+    overwrite: bool = Query(True),
+):
+    """创建 NFO 的补图：本地上传图片走 backfill_cover_from_upload（原图作 thumb，横图裁竖版 poster）。
+
+    输出与 NFO 同目录、基础名同 NFO 文件名：{name}-thumb.jpg / {name}-poster.jpg。
+    """
+    import time
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=422, detail="未收到图片数据")
+    ext = Path(filename).suffix.lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+        raise HTTPException(status_code=422, detail=f"不支持的图片格式: {ext or '(缺扩展名)'}")
+
+    base = _create_base_name(name, "")
+    if not base:
+        raise HTTPException(status_code=422, detail="请填写文件名或番号")
+    directory = _resolve_create_dir(dir, subfolder)
+    _check_dir(directory)
+
+    from scripts.cover_backfill import backfill_cover_from_upload
+
+    directory.mkdir(parents=True, exist_ok=True)
+    tmp = directory / f".[create-cover]{int(time.time() * 1000)}{ext}"
+    tmp.write_bytes(body)
+    try:
+        result = await backfill_cover_from_upload(base, tmp, directory, overwrite=overwrite)
+        signal.show_log_text(f"🖼️ NFO 补图完成: {result.thumb_path} / {result.poster_path}")
+        return {"ok": True, "thumb": str(result.thumb_path), "poster": str(result.poster_path)}
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+@router.get("/extract-number")
+def extract_number(path: str = Query(..., description="视频文件路径，从其文件名提取番号")):
+    """从文件名提取番号（手动刮削表单的番号默认值），与正常刮削/补图同一规则。"""
+    from mdcx.config.manager import manager
+    from mdcx.number import get_file_number
+
+    name = Path(path.strip()).name
+    number = get_file_number(name, manager.computed.escape_string_list) or ""
+    return {"number": number}
+
+
+@router.post("/move-video")
+def move_video(
+    src: str = Query(..., description="视频文件当前路径"),
+    dir: str = Query("", description="父目录；留空 = 成功输出目录"),
+    subfolder: str = Query("", description="番号子目录，与 NFO 落盘目录一致"),
+    name: str = Query(..., description="目标文件名（不含扩展名），与番号一致"),
+    overwrite: bool = Query(False),
+):
+    """手动刮削收尾：把选中的视频移入番号目录并改名为番号。
+
+    跨挂载点（如 NAS 的 /media → /out）由 shutil.move 自动 copy+delete。
+    """
+    import shutil
+
+    s = Path(src.strip())
+    if not s.is_file():
+        raise HTTPException(status_code=404, detail=f"视频文件不存在: {src}")
+
+    base = _create_base_name(name, "")
+    if not base:
+        raise HTTPException(status_code=422, detail="请填写番号")
+    directory = _resolve_create_dir(dir, subfolder)
+    _check_dir(directory)
+
+    target = directory / f"{base}{s.suffix}"
+    if target.exists() and not overwrite:
+        raise HTTPException(status_code=409, detail=f"文件已存在: {target}")
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(s), str(target))
+    except OSError as e:
+        raise HTTPException(status_code=422, detail=f"视频移动失败: {e}") from e
+    signal.show_log_text(f"🎬 视频已移动: {s} → {target}")
+    return {"ok": True, "path": str(target)}
 
 
 @router.post("/rescrape")

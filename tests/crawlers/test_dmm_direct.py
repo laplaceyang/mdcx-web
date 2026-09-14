@@ -1,6 +1,10 @@
 import pytest
 
-from mdcx.crawlers.dmm_direct import generate_cid_candidates, generate_image_candidates
+from mdcx.crawlers.dmm_direct import (
+    _parse_number,
+    generate_cid_candidates,
+    generate_image_candidates,
+)
 
 
 def test_ipx_no_prefix_first():
@@ -326,3 +330,13 @@ async def test_find_valid_dmm_cover_skips_uncensored(monkeypatch):
     monkeypatch.setattr("mdcx.base.web.check_url", _counting_ok)
     monkeypatch.setattr("mdcx.base.web.get_imgsize", _hd_size)
     assert await find_valid_dmm_cover("FC2-PPV-1234567") is None
+
+
+def test_mixed_digit_series_parse():
+    """系列段含数字的番号（A-122B-016 → cid 形态 a122b00016）。"""
+    assert _parse_number("A-122B-016") == [("a122b", 16, "00016")]
+
+
+def test_mixed_digit_series_cid_candidates():
+    candidates = generate_cid_candidates("A-122B-016")
+    assert "a122b00016" in candidates

@@ -10,10 +10,12 @@ export const useScrapeStore = defineStore('scrape', () => {
     state: 'idle',
     progress: 0,
     results: 0,
-    counts: { succ: 0, fail: 0, done: 0, total: 0 },
+    counts: { succ: 0, fail: 0, done: 0, total: 0, skipped: 0, restored: 0 },
     elapsed: 0,
   })
   const results = ref<ResultItem[]>([])
+  // 结果去重键：loadResults 快照与 WS 实时事件在页面加载/重连瞬间可能重叠
+  const seenResultKeys = new Set<string>()
   const mainLogs = ref<string[]>([])
   const failedLogs = ref<string[]>([])
   const netLogs = ref<string[]>([])
@@ -35,9 +37,28 @@ export const useScrapeStore = defineStore('scrape', () => {
     }
   }
 
+  function resultKey(item: ResultItem): string {
+    const path = String((item.show as any)?.file_info?.file_path ?? '')
+    return `${item.status}|${item.real_number}|${path}`
+  }
+
+  function addResult(item: ResultItem): boolean {
+    const key = resultKey(item)
+    if (seenResultKeys.has(key)) return false
+    seenResultKeys.add(key)
+    results.value.push(item)
+    return true
+  }
+
+  function resetResults(items: ResultItem[]) {
+    seenResultKeys.clear()
+    for (const item of items) seenResultKeys.add(resultKey(item))
+    results.value = items
+  }
+
   async function loadResults() {
     try {
-      results.value = (await api.scrapeResults()).items
+      resetResults((await api.scrapeResults()).items)
     } catch {
       /* ignore */
     }
@@ -70,7 +91,7 @@ export const useScrapeStore = defineStore('scrape', () => {
           status.value.progress = Number(args[0] ?? 0)
           break
         case 'exec_show_list_name':
-          results.value.push({ status: String(args[0]), real_number: String(args[2] ?? ''), show: args[1] as ResultItem['show'] })
+          addResult({ status: String(args[0]), real_number: String(args[2] ?? ''), show: args[1] as ResultItem['show'] })
           break
         case 'change_buttons_status':
           status.value.state = 'running'
@@ -80,6 +101,11 @@ export const useScrapeStore = defineStore('scrape', () => {
           void refresh()
           break
       }
+    })
+    // 断线重连丢事件时，结果/状态以服务端为准整体重拉（结果列表不做逐条补发）
+    ws.onResync(() => {
+      void refresh()
+      void loadResults()
     })
     // 详情日志缓冲走轮询排空（signal.add_log 通道）
     detailTimer = window.setInterval(async () => {
@@ -104,6 +130,7 @@ export const useScrapeStore = defineStore('scrape', () => {
     stopping,
     refresh,
     loadResults,
+    resetResults,
     initWs,
   }
 })

@@ -16,6 +16,19 @@ const DIR_FIELDS = new Set([
 const FILE_FIELDS = new Set(['info_database_path'])
 const LIST_DIR_FIELDS = new Set(['folders'])
 
+// Cookie / API Key 类字段：值很长且敏感，用多行文本框 + description 提示，避免单行输入不便核对
+const SENSITIVE_FIELDS = new Set([
+  'javdb',
+  'fc2ppvdb',
+  'javbus',
+  'theporndb_api_token',
+  'tmdb_api_key',
+  'api_key',
+  'baidu_key',
+  'deepl_key',
+  'llm_key',
+])
+
 /**
  * Schema 驱动的递归表单节点：
  * boolean→switch、integer→number、enum→select、string[]→可创建多选、
@@ -72,6 +85,7 @@ const enumOptions = computed(() => (resolved.value.enum ?? []).map((v: any) => S
 
 const isDirField = computed(() => DIR_FIELDS.has(props.fieldName ?? ''))
 const isFileField = computed(() => FILE_FIELDS.has(props.fieldName ?? ''))
+const isSensitiveField = computed(() => SENSITIVE_FIELDS.has(props.fieldName ?? ''))
 const isListDirField = computed(() => LIST_DIR_FIELDS.has(props.fieldName ?? ''))
 const textValue = computed(() => (props.modelValue === undefined || props.modelValue === null ? '' : String(props.modelValue)))
 
@@ -178,6 +192,18 @@ function updateField(key: string, value: any) {
       @update:model-value="update"
     />
   </template>
+  <template v-else-if="isSensitiveField">
+    <div class="sensitive-field">
+      <el-input
+        type="textarea"
+        :rows="2"
+        :model-value="textValue"
+        :placeholder="resolved.description || '从浏览器/站点控制台复制粘贴'"
+        @update:model-value="update"
+      />
+      <div v-if="resolved.description" class="sensitive-hint">{{ resolved.description }}</div>
+    </div>
+  </template>
   <template v-else-if="isDirField">
     <DirPicker
       :model-value="String(modelValue ?? '')"
@@ -218,6 +244,16 @@ function updateField(key: string, value: any) {
 <style scoped>
 .w-200 {
   width: 200px;
+}
+.sensitive-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sensitive-hint {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.4;
 }
 .w-260 {
   width: 260px;

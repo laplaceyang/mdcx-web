@@ -172,7 +172,10 @@ def _parse_number(number: str) -> list[tuple[str, int, str]]:
                 return [(series, int(rest), f"{int(rest):05d}")]
     m = re.match(r"^([a-z]+)(\d+)$", cleaned)
     if not m:
-        return []
+        # 系列段含数字的番号（A-122B-016 → cid a122b00016）：字母数字混合系列 + 纯数字编号
+        m = re.match(r"^([a-z]+\d+[a-z]+)(\d+)$", cleaned)
+        if not m:
+            return []
     series, digits = m.group(1), m.group(2)
     return [(series, int(digits), f"{int(digits):05d}")]
 

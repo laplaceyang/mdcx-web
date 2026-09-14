@@ -196,6 +196,33 @@ async def test_get_file_info_marks_uncensored_digit_numbers(file_path: Path, exp
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("file_path", "expected_number", "expected_short"),
+    [
+        # 数字开头的素人番号：剥前缀（原有行为）
+        (Path("D:/test/259LUXU-1456.mp4"), "259LUXU-1456", "LUXU-1456"),
+        (Path("D:/test/300MIUM-702.mp4"), "300MIUM-702", "MIUM-702"),
+        # 字母开头的混合系列番号：前缀 A-122 是系列的一部分，不剥
+        # （A-122B-016 案例回归：误剥成 B-016 后全部站点按错误番号搜索）
+        (Path("D:/test/A-122B-016.mkv"), "A-122B-016", ""),
+        (Path("D:/test/ABC-123.mp4"), "ABC-123", ""),
+    ],
+)
+async def test_get_file_info_short_number_only_strips_digit_prefix(
+    file_path: Path, expected_number: str, expected_short: str
+):
+    old_file_mode = Flags.file_mode
+    Flags.file_mode = FileMode.Default
+    try:
+        file_info = await get_file_info_v2(file_path, copy_sub=False)
+    finally:
+        Flags.file_mode = old_file_mode
+
+    assert file_info.number == expected_number
+    assert file_info.short_number == expected_short
+
+
+@pytest.mark.asyncio
 async def test_get_file_info_marks_restored_as_umr_case_insensitive():
     old_file_mode = Flags.file_mode
     Flags.file_mode = FileMode.Default
@@ -380,3 +407,33 @@ def test_movie_number_lookup_values_dedup():
     """分隔符替换后与原值相同时去重"""
     assert movie_number_lookup_values("ABC123") == ["ABC123"]
     assert len(movie_number_lookup_values("ABC-123")) == 2
+
+
+# ============================================================
+# get_file_number — 场景发布名首段兜底（A-122B-016 案例回归）
+# ============================================================
+
+
+# 实际环境常见替换词（用户 string 配置含 1080p；REPL_LIST 已含 H.264 等）
+_SCENE_ESCAPES = ["1080p", "H.264", "WEB-DL"]
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        # 场景发布名：所有番号特征分支未命中时取首个点分段（A-122B-016 案例回归：
+        # 此前整串发布名进入番号，DMM 品番路由失效，后续站点模糊匹配错影片）
+        ("A-122B-016.2026.1080p.DMM.WEB-DL.AAC2.0.H.264-MTeam.mkv", "A-122B-016"),
+        ("ABC-123.2024.2160p.WEB-DL.X264-GROUP.mkv", "ABC-123"),
+        # 分辨率开头不是番号（替换词移除 1080p 后首段无数字，不触发首段兜底）
+        ("1080p.movie.title.mkv", "MOVIE.TITLE"),
+        # 无数字/无字母的首段不提取
+        ("Movie.2026.1080p.mkv", "MOVIE-2026"),
+        # 无点分段的文件名保持原兜底行为
+        ("拘束女装美少年.mp4", "拘束女装美少年"),
+        ("ssni00644.mp4", "SSNI-644"),
+        ("259LUXU-1456.mp4", "259LUXU-1456"),
+    ],
+)
+def test_get_file_number_scene_release_head(filename, expected):
+    assert get_file_number(f"D:/media/{filename}", _SCENE_ESCAPES) == expected

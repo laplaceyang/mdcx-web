@@ -7,6 +7,7 @@ from lxml import etree
 from ..base.web import check_url, is_dmm_image_url, normalize_media_url
 from ..config.enums import Website
 from ..config.manager import manager
+from ..number import normalize_movie_number
 from .base import BaseCrawler, Context, CrawlerData, CrawlerException, get_year
 
 
@@ -280,6 +281,12 @@ class LibredmmCrawler(BaseCrawler):
         title = get_title(html_info)
         if not title:
             raise CrawlerException("数据获取失败: 未获取到 title")
+
+        # 搜索重定向可能模糊匹配到别的影片（实测 /search?q=A-122B-016 被服务端
+        # 重定向到 B-016 的详情页），页面番号与请求番号折叠后不一致时视为未命中，
+        # 避免把别的影片的元数据安到当前文件上
+        if web_number and normalize_movie_number(web_number) != normalize_movie_number(number):
+            raise CrawlerException(f"番号不匹配: 请求 {number}，页面为 {web_number}")
 
         # 使用网页上的番号，若无则使用输入番号
         number = web_number or number

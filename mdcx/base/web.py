@@ -33,6 +33,46 @@ _amazon_request_throttle = _AdaptiveRequestThrottle(
     cooldown_max=8.0,
 )
 
+# Amazon 连接熔断器：amazon.co.jp 在部分网络下整体不可达（连接挂起、无响应），
+# 每个请求都要耗尽全部重试超时（单次搜索可达数分钟），一个文件能拖 30 分钟以上。
+# 连续 N 次「网络级失败」（超时/连接错误，而非拿到 HTTP 状态码）即熔断，
+# 冷却期内直接跳过 Amazon 搜索；冷却过后放行一次探测，仍失败则继续熔断。
+_AMAZON_BREAKER_LOCK = threading.Lock()
+_AMAZON_BREAKER = {"fails": 0, "opened_at": 0.0}
+_AMAZON_BREAKER_THRESHOLD = 2
+_AMAZON_BREAKER_COOLDOWN = 1800.0
+
+
+def _amazon_breaker_open() -> bool:
+    with _AMAZON_BREAKER_LOCK:
+        if _AMAZON_BREAKER["fails"] < _AMAZON_BREAKER_THRESHOLD:
+            return False
+        if time.time() - _AMAZON_BREAKER["opened_at"] > _AMAZON_BREAKER_COOLDOWN:
+            # 半开：放行一次探测
+            _AMAZON_BREAKER["fails"] = _AMAZON_BREAKER_THRESHOLD - 1
+            return False
+        return True
+
+
+def _amazon_breaker_record(html_info: str | None, error: str | None) -> None:
+    if html_info is not None or "HTTP" in (error or ""):
+        # 拿到响应（含 4xx/5xx 反爬页）说明站点可达，复位
+        with _AMAZON_BREAKER_LOCK:
+            _AMAZON_BREAKER["fails"] = 0
+        return
+    network_error = any(
+        mark in (error or "") for mark in ("超时", "连接", "Timeout", "timeout", "SSL", "网络请求错误")
+    )
+    if not network_error:
+        return
+    with _AMAZON_BREAKER_LOCK:
+        _AMAZON_BREAKER["fails"] += 1
+        if _AMAZON_BREAKER["fails"] == _AMAZON_BREAKER_THRESHOLD:
+            _AMAZON_BREAKER["opened_at"] = time.time()
+            signal.add_log(
+                "🔴 Amazon 连接持续失败（超时/无响应），30 分钟内跳过 Amazon 高清图搜索，避免拖慢刮削"
+            )
+
 _DMM_IMAGE_BAD_URL_KEYS = ("now_printing", "nowprinting", "noimage", "nopic", "media_violation")
 _DMM_IMAGE_PROBE_PARAMS = (("w", "120"), ("h", "90"))
 _JDBSTATIC_HOST_SUFFIXES = ("jdbstatic.com",)
@@ -731,6 +771,8 @@ async def get_amazon_data(req_url: str) -> tuple[bool, str]:
     """
     获取 Amazon 数据
     """
+    if _amazon_breaker_open():
+        return False, "Amazon 连接熔断中，跳过本次搜索"
 
     def _is_amazon_rate_limited(html_content: str | None, error_text: str | None) -> bool:
         combined = f"{error_text or ''}\n{html_content or ''}".lower()
@@ -747,6 +789,7 @@ async def get_amazon_data(req_url: str) -> tuple[bool, str]:
     async def _request_with_amazon_throttle(request_headers: dict[str, str]) -> tuple[str | None, str]:
         waited = await _amazon_request_throttle.wait_turn()
         html_info, error = await client.get_text(req_url, headers=request_headers, encoding="utf-8")
+        _amazon_breaker_record(html_info, error)
         throttled = _is_amazon_rate_limited(html_info, error)
         cooldown, penalty_level, escalated = await _amazon_request_throttle.register_result(throttled=throttled)
         if throttled:

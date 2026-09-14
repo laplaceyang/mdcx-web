@@ -40,14 +40,17 @@ set_signal(bus)
 signal.show_log_text("hello")
 signal.exec_set_processbar.emit(42)
 seen = []
-unsubscribe = bus.subscribe(lambda name, args: seen.append((name, args)))
+unsubscribe = bus.subscribe(lambda name, args, seq: seen.append((name, args)))
 signal.change_buttons_status.emit()
 unsubscribe()
 signal.exec_exit_app.emit()
 
 assert seen == [("change_buttons_status", ())], seen
-replay_names = [name for name, _ in bus.replay_events()]
+replay_names = [name for _, name, _ in bus.replay_events()]
 assert "log_text" in replay_names and "exec_set_processbar" in replay_names, replay_names
+# 事件带全局递增 seq（WS 客户端凭此去重重连补发）
+seqs = [seq for seq, _, _ in bus.replay_events()]
+assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs), seqs
 signal.stop = False
 assert bus.stop is False
 print("HEADLESS IMPORT OK")

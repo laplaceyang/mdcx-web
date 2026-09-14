@@ -77,6 +77,8 @@ class _Flags:
     scrape_done: int = 0
     succ_count: int = 0
     fail_count: int = 0
+    skipped_count: int = 0  # 断点续刮跳过的已刮削文件数（呈现用）
+    restored_count: int = 0  # 恢复重刮的上次失败文件数（呈现用）
     file_new_path_dic: dict[Path, list[Path]] = field(default_factory=dict)
     pic_catch_set: set[Path] = field(default_factory=set)
     file_done_dic: dict[str, FileDoneDict] = field(default_factory=dict)
@@ -118,6 +120,8 @@ class _Flags:
         self.scrape_done = 0
         self.succ_count = 0
         self.fail_count = 0
+        self.skipped_count = 0
+        self.restored_count = 0
         self.file_new_path_dic = {}
         self.pic_catch_set = set()
         self.file_done_dic = {}

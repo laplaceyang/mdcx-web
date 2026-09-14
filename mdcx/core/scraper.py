@@ -258,12 +258,11 @@ class Scraper:
                 existing = set(movie_list)
                 cache.cleanup_missing(existing)
                 force = file_mode != FileMode.Default  # Again/单文件等模式视为强制重新刮削
-                if force:
-                    skipped = 0
-                else:
+                skipped = 0
+                exhausted = 0
+                if not force:
                     before = len(movie_list)
                     filtered = []
-                    exhausted = 0
                     for p in movie_list:
                         mtime = await _safe_mtime(p)
                         if not cache.should_skip(p, mtime, force=False):
@@ -288,9 +287,11 @@ class Scraper:
                         signal.show_log_text(
                             f" ⏭ 断点续刮：跳过 {exhausted} 个连续失败超过 {MAX_RETRY_COUNT} 次的文件（强制重刮可重试）"
                         )
+                Flags.skipped_count = skipped + exhausted
                 pending = cache.list_pending(existing)
                 if pending:
                     movie_list.extend(pending)
+                    Flags.restored_count = len(pending)
                     signal.show_log_text(f" 🔄 恢复 {len(pending)} 个上次失败的文件重新刮削")
             except Exception as e:
                 signal.show_log_text(f" ⚠ 刮削状态缓存读取失败，按全量处理: {e}")
@@ -1012,7 +1013,8 @@ class Scraper:
                     is_first = False
             if not is_first:
                 # 同番号任务等待首个任务完成；若首个任务失败，直接结束等待，避免线程卡死
-                wait_timeout = 300
+                # 首个任务的爬取+海报处理在慢网（站点超时链）下可长达数分钟，300s 不够用
+                wait_timeout = 900
                 waited = 0
                 event = Flags.json_get_events.get(movie_number)
                 while Flags.json_get_status.get(movie_number) is None:

@@ -93,7 +93,7 @@ export const api = {
       }
       return resp.json() as Promise<{ ok: boolean; number: string; thumb: string; poster: string }>
     }),
-  translateTest: (mode: 'text' | 'nfo', payload: { text?: string; path?: string }) =>
+  translateTest: (mode: 'text' | 'nfo', payload: { text?: string; path?: string; field?: 'title' | 'outline' }) =>
     request<{
       mode: string
       original?: string
@@ -131,6 +131,40 @@ export const api = {
     }),
   nfoDelete: (path: string) => request(`/api/nfo/item?path=${encodeURIComponent(path)}`, 'DELETE'),
   nfoRescrape: (path: string) => request(`/api/nfo/rescrape?path=${encodeURIComponent(path)}`, 'POST'),
+  nfoCreate: (payload: {
+    dir?: string
+    subfolder?: string
+    filename?: string
+    overwrite?: boolean
+    fields: Record<string, unknown>
+  }) => request<{ ok: boolean; path: string; content: string }>('/api/nfo/create', 'POST', payload),
+  nfoCreateCover: (name: string, dir: string, subfolder: string, file: File, overwrite = true) =>
+    fetch(
+      `/api/nfo/create-cover?name=${encodeURIComponent(name)}&dir=${encodeURIComponent(
+        dir,
+      )}&subfolder=${encodeURIComponent(subfolder)}&filename=${encodeURIComponent(file.name)}&overwrite=${overwrite}`,
+      { method: 'POST', body: file },
+    ).then(async (resp) => {
+      if (!resp.ok) {
+        let detail = resp.statusText
+        try {
+          detail = (await resp.json()).detail ?? detail
+        } catch {
+          /* keep statusText */
+        }
+        throw new Error(detail)
+      }
+      return resp.json() as Promise<{ ok: boolean; thumb: string; poster: string }>
+    }),
+  nfoMoveVideo: (src: string, dir: string, subfolder: string, name: string, overwrite: boolean) =>
+    request<{ ok: boolean; path: string }>(
+      `/api/nfo/move-video?src=${encodeURIComponent(src)}&dir=${encodeURIComponent(
+        dir,
+      )}&subfolder=${encodeURIComponent(subfolder)}&name=${encodeURIComponent(name)}&overwrite=${overwrite}`,
+      'POST',
+    ),
+  extractNumber: (path: string) =>
+    request<{ number: string }>(`/api/nfo/extract-number?path=${encodeURIComponent(path)}`),
   // ===== Emby 演员管理 =====
   embyTest: () => request<{ ok: boolean; folders: unknown[] }>('/api/emby/test', 'POST'),
   embyActors: (filterActorOnly = true) =>
@@ -206,7 +240,7 @@ export interface ScrapeStatus {
   state: string
   progress: number
   results: number
-  counts: { succ: number; fail: number; done: number; total: number }
+  counts: { succ: number; fail: number; done: number; total: number; skipped: number; restored: number }
   elapsed: number
 }
 

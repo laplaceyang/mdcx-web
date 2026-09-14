@@ -127,11 +127,16 @@ class DmmApiCrawler(DmmCrawler):
 
     @classmethod
     def _build_api_url(cls, **params: str) -> str:
+        # DMM affiliate v3 必填 site（缺失直接 400），keyword 搜索只在具体楼层生效
+        # （不带 service/floor 时返回 0 结果），数字作品走 digital/videoa 楼层
         query = urlencode(
             {
                 "api_id": cls._api_id(),
                 "affiliate_id": cls._affiliate_id(),
                 "output": "json",
+                "site": "FANZA",
+                "service": "digital",
+                "floor": "videoa",
                 **params,
             }
         )
@@ -145,13 +150,21 @@ class DmmApiCrawler(DmmCrawler):
         （小写前缀 + 编号补零到 5 位，如 ssis00200）可精确命中。
         特殊站内前缀番号（如 T28 系列 cid=55t2800645）转换后可能落空，
         回退小写厂牌词模糊搜索，交由 _find_best_item 打分挑选。
+        系列段含数字的多横杠番号（A-122B-016，cid=h_1724a122b00016）同理：
+        横杠原形态与未补零形态实测均 0 结果，需构造 cid 形态 a122b00016。
         """
         stripped = number.strip()
         m = re.fullmatch(r"([A-Za-z0-9]+)-(\d{1,5})", stripped)
-        if not m:
-            return [stripped]
-        prefix, digits = m.group(1).lower(), m.group(2)
-        return [f"{prefix}{digits.zfill(5)}", prefix]
+        if m:
+            prefix, digits = m.group(1).lower(), m.group(2)
+            return [f"{prefix}{digits.zfill(5)}", prefix]
+        # 系列段含数字的多横杠番号（A-122B-016）：去横杠系列 + 编号补零构造 cid 形态
+        m = re.fullmatch(r"(.+)-(\d{1,5})", stripped)
+        if m:
+            series = m.group(1).replace("-", "")
+            if re.fullmatch(r"[A-Za-z]+\d+[A-Za-z]+", series):
+                return [f"{series.lower()}{m.group(2).zfill(5)}", series.lower()]
+        return [stripped]
 
     @staticmethod
     def _match_score(item: _DmmApiItem, number_clean: str) -> int:

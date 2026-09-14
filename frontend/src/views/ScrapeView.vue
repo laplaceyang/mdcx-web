@@ -127,7 +127,7 @@ async function onStop() {
 
 async function onClear() {
   await api.clearResults()
-  scrape.results = []
+  scrape.resetResults([])
   selected.value = null
 }
 

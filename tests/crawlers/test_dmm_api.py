@@ -282,6 +282,13 @@ class TestBuildApiUrl:
         assert "UrwskPfkqQ0DuVry2gYL" in url
         assert "10278-996" in url
 
+    def test_url_contains_site_service_floor(self):
+        """affiliate v3 必填 site（缺失 400），keyword 检索只在具体楼层生效（缺失 0 结果）。"""
+        url = DmmApiCrawler._build_api_url(keyword="ssis00200")
+        assert "site=FANZA" in url
+        assert "service=digital" in url
+        assert "floor=videoa" in url
+
 
 class TestSearchKeywords:
     def test_standard_number_converts_to_content_id_form(self):
@@ -316,3 +323,24 @@ def test_build_aws_thumb_candidates_includes_dmm_direct_prefix(monkeypatch):
 
     assert "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/436abf00042/436abf00042pl.jpg" in candidates
     assert candidates[0].startswith("https://awsimgsrc.dmm.co.jp/pics_dig/")
+
+
+class TestSearchKeywords:
+    """_search_keywords：DMM keyword 全文检索候选序列。"""
+
+    def test_single_dash_number_cid_form(self):
+        assert DmmApiCrawler._search_keywords("SSIS-200") == ["ssis00200", "ssis"]
+
+    def test_multi_dash_mixed_series_uses_cid_form(self):
+        """系列段含数字的多横杠番号（A-122B-016，真实 cid=h_1724a122b00016）。
+
+        横杠原形态与未补零形态实测均 0 结果，必须构造 cid 形态 a122b00016。
+        """
+        assert DmmApiCrawler._search_keywords("A-122B-016") == ["a122b00016", "a122b"]
+
+    def test_digit_leading_series_unchanged(self):
+        assert DmmApiCrawler._search_keywords("T28-064") == ["t2800064", "t28"]
+
+    def test_non_number_falls_back_to_raw(self):
+        assert DmmApiCrawler._search_keywords("FC2-1234567") == ["FC2-1234567"]
+        assert DmmApiCrawler._search_keywords("乱码文件名") == ["乱码文件名"]

@@ -21,8 +21,13 @@ import mdcx.consts as consts  # noqa: E402
 consts.MARK_FILE = tmp / "MDCx.config"
 
 from fastapi.testclient import TestClient  # noqa: E402
+from mdcx.models.model_types import ShowData  # noqa: E402
 from mdcx.signals import signal  # noqa: E402
 from mdcx.webapp.app import app  # noqa: E402
+
+
+def _empty_show():
+    return ShowData.empty()
 
 with TestClient(app) as client:  # with 触发 lifespan（hub.attach）
     # 系统信息
@@ -76,14 +81,57 @@ with TestClient(app) as client:  # with 触发 lifespan（hub.attach）
     r = client.get("/api/media/file", params={"path": "/etc/passwd"})
     assert r.status_code == 403, r.text
 
-    # WebSocket：hello + 总线事件实时推送
+    # WebSocket：hello(seq) + 增量补发 + synced 分界 + 实时推送
+    signal.show_log_text("ws-replay-log-marker")  # 连接前发出 → 应在补发里
+    signal.show_list_name("succ", _empty_show(), "ABC-123")  # 结果事件不参与补发
     with client.websocket_connect("/ws") as ws:
         hello = ws.receive_json()
         assert hello["type"] == "hello", hello
+        assert isinstance(hello.get("seq"), int)
+        # synced 之前是补发：日志事件应在，结果事件不应在（结果列表以 REST 为准）
+        replayed = []
+        while True:
+            msg = ws.receive_json()
+            if msg["type"] == "synced":
+                break
+            assert msg["type"] == "event" and isinstance(msg.get("seq"), int), msg
+            replayed.append(msg)
+        assert any(m["event"] == "log_text" and "ws-replay-log-marker" in m["args"][0] for m in replayed), replayed
+        assert all(m["event"] != "exec_show_list_name" for m in replayed), replayed
+        # synced 之后是实时推送
         signal.show_log_text("ws-test-log-123")
-        event = ws.receive_json()
-        assert event["type"] == "event" and event["event"] == "log_text", event
-        assert "ws-test-log-123" in event["args"][0]
+        while True:
+            msg = ws.receive_json()
+            if msg["type"] == "event" and msg["event"] == "log_text" and "ws-test-log-123" in msg["args"][0]:
+                break
+        last_seq = msg["seq"]
+
+    # 带 after 增量重连：不再补发已有事件
+    with client.websocket_connect(f"/ws?after={last_seq}") as ws:
+        hello2 = ws.receive_json()
+        assert hello2["type"] == "hello", hello2
+        extra = []
+        while True:
+            msg = ws.receive_json()
+            if msg["type"] == "synced":
+                break
+            extra.append(msg)
+        assert extra == [], extra
+
+    # after=0 全量补发：能收到之前的日志事件，仍不含结果事件
+    with client.websocket_connect("/ws?after=0") as ws:
+        assert ws.receive_json()["type"] == "hello"
+        names = []
+        while True:
+            msg = ws.receive_json()
+            if msg["type"] == "synced":
+                break
+            names.append(msg["event"])
+        assert "log_text" in names and "exec_show_list_name" not in names, names
+
+    # 状态接口计数含跳过/恢复
+    r = client.get("/api/scrape/status")
+    assert set(r.json()["counts"]) >= {"succ", "fail", "done", "total", "skipped", "restored"}
 
 print("WEBAPP API TESTS OK")
 """

@@ -162,3 +162,54 @@ async def test_unexpected_cancelled_scrape_task_is_not_silent(monkeypatch: pytes
     scraper = scraper_module.Scraper(crawler_provider=object())
     with pytest.raises(scraper_module.UnexpectedScrapeCancellation, match="异常取消"):
         await scraper._run_tasks_with_limit([Path("MIAA-001.mp4")], 1, 1)
+
+
+@pytest.mark.asyncio
+async def test_again_mode_cache_read_does_not_crash(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """Again 模式（force 分支）缓存读取不应抛 UnboundLocalError。
+
+    回归：Flags.skipped_count = skipped + exhausted 写在 force/非force 分支之外，
+    Again/单文件模式下 exhausted 未赋值即抛 UnboundLocalError，被 except 吃掉后
+    整个断点续刮（跳过已完成/恢复失败）失效，并提示「刮削状态缓存读取失败」。
+    """
+    from mdcx.core.scrape_cache import ScrapeStateCache
+
+    scraper_module = _patch_scraper_env(monkeypatch, main_mode=1)
+    Flags.reset()
+
+    files = []
+    for name in ("a.mp4", "b.mp4"):
+        p = tmp_path / name
+        p.write_bytes(b"x")
+        files.append(p)
+
+    db = tmp_path / "scrape_state.db"
+    cache = ScrapeStateCache(db)
+    assert cache.open() is True
+    cache.set_done(files[0], mtime=files[0].stat().st_mtime)
+    cache.close()
+
+    logs: list[str] = []
+
+    async def fake_log(text):
+        logs.append(str(text))
+
+    scheduled: list[Path] = []
+
+    async def fake_run_tasks_with_limit(_self, task_list: list[Path], _task_count: int, _thread_number: int):
+        scheduled.extend(task_list)
+        Flags.scrape_done = _task_count
+
+    monkeypatch.setattr(scraper_module.Scraper, "_run_tasks_with_limit", fake_run_tasks_with_limit)
+    monkeypatch.setattr(scraper_module.resources, "u", lambda _name: db)
+    monkeypatch.setattr(scraper_module.signal, "show_log_text", fake_log)
+
+    scraper = scraper_module.Scraper(crawler_provider=object())
+    await scraper._run(FileMode.Again, files.copy())
+
+    # 强制模式：不做跳过（全部重新刮），且不出现缓存读取失败告警
+    assert scheduled == files
+    assert not any("缓存读取失败" in t for t in logs)
+    assert Flags.skipped_count == 0
+    if scraper._state_cache:
+        scraper._state_cache.close()

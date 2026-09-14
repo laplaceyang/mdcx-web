@@ -214,3 +214,6 @@ _failed.json
 # ASIN 库清洗/可达性脚本产出的人工审阅中间表（运行时生成，勿入库）
 amazon_asin_manual_review_*.xlsx
 .dockerignore
+
+# AI 工作目录（含记忆/交接文件，含敏感信息，永不入库）
+.monkeycode/

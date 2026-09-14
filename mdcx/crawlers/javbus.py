@@ -8,6 +8,7 @@ from lxml import etree
 from ..config.enums import Website
 from ..config.manager import manager
 from ..core.mosaic import is_plain_uncensored_mosaic
+from ..number import normalize_movie_number
 from .base import BaseCrawler, Context, CrawlerData, CrawlerException
 from .base.base_types import split_csv
 
@@ -33,6 +34,12 @@ def get_title(html):
 def getWebNumber(html, number):
     result = html.xpath('//span[@class="header"][contains(text(), "識別碼:")]/../span[2]/text()')
     return result[0] if result else number
+
+
+def getWebNumberStrict(html) -> str:
+    """页面真实展示的番号（識別碼）；无该元素返回空串（欧美页等）。"""
+    result = html.xpath('//span[@class="header"][contains(text(), "識別碼:")]/../span[2]/text()')
+    return result[0].strip() if result else ""
 
 
 def getActor(html):
@@ -507,6 +514,12 @@ class JavbusCrawler(BaseCrawler):
             raise CrawlerException("数据获取失败: 未获取到title")
 
         number = getWebNumber(html_info, number)
+        # 直连详情页 URL 时站点可能返回任意影片（实测 /A-122B-016 返回了 B-016
+        # 拘束女装美少年 的页面）。页面展示番号（識別碼）与请求番号折叠后不一致
+        # 时视为未命中；页面无番号元素（欧美页等）时保持原行为不校验
+        page_number = getWebNumberStrict(html_info)
+        if page_number and normalize_movie_number(page_number) != normalize_movie_number(ctx.input.number):
+            raise CrawlerException(f"番号不匹配: 请求 {ctx.input.number}，页面为 {page_number}")
         title = title.replace(number, "").strip()
         actor = getActor(html_info)
         cover_url = getCover(html_info, self.base_url)

@@ -178,6 +178,7 @@
       "verify_ssl",
       "timeout",
       "retry",
+      "user_agent",
       "theporndb_api_token",
       "tmdb_api_base",
       "tmdb_api_key",
