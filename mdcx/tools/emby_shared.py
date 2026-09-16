@@ -102,6 +102,8 @@ def _image_content_type(path: Path) -> str:
 
 async def _upload_actor_photo(url: str, pic_path: Path) -> tuple[bool, str]:
     try:
+        if not Path(pic_path).exists():
+            return False, f"图片文件不存在: {pic_path}"
         async with aiofiles.open(pic_path, "rb") as f:
             content = await f.read()
         # Emby/Jellyfin 的 Images/Primary、Images/Backdrop 等服务端会

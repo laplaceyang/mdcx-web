@@ -167,7 +167,9 @@ def getMosaic(tag, title):  # 获取马赛克
 
 
 def normalize_fc2_number(number: str) -> str:
-    return number.upper().replace("FC2PPV", "").replace("FC2-PPV-", "").replace("FC2-", "").replace("-", "").strip()
+    # 剥掉所有非数字（含解析层保留的 -C/-U 后缀），FC2 站点只认纯数字 id
+    cleaned = number.upper().replace("FC2PPV", "").replace("FC2-PPV-", "").replace("FC2-", "").replace("-", "").strip()
+    return re.sub(r"\D", "", cleaned)
 
 
 class Fc2Crawler(BaseCrawler):

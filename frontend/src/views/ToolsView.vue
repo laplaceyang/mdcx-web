@@ -907,6 +907,20 @@ onActivated(refreshStatus)
           </div>
         </el-card>
 
+        <el-card shadow="never" header="👩 Emby 演员批量补全" class="mt">
+          <p class="upload-hint">
+            按 gfriends 头像库自动匹配并写入 Emby；需先在「软件设置」配置 Emby 地址 / API Key / 用户 ID，进度见日志页
+          </p>
+          <div class="btn-row">
+            <el-button :disabled="isRunning('演员头像写入')" @click="run('演员头像写入', api.actorPhotoSync)">
+              头像批量写入
+            </el-button>
+            <el-button :disabled="isRunning('演员信息写入')" @click="run('演员信息写入', api.actorInfoSync)">
+              信息批量写入
+            </el-button>
+          </div>
+        </el-card>
+
         <el-card shadow="never" header="🗄️ 刮削缓存管理" class="mt">
           <div v-if="cacheStats" class="cache-stats">
             <span>已完成 {{ cacheStats.done }}</span>

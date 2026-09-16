@@ -1,7 +1,9 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
-type Handler = (event: string, args: unknown[]) => void
+// replaying=true 表示本次连接首次 synced 之前的补发事件（页面刚打开时的历史回放），
+// 订阅方可据此只保留尾部，避免整段历史刷屏；断线重连的缺口补发不算（lastSeq>0，量小需连续渲染）
+type Handler = (event: string, args: unknown[], replaying: boolean) => void
 
 export const useWsStore = defineStore('ws', () => {
   const connected = ref(false)
@@ -13,6 +15,7 @@ export const useWsStore = defineStore('ws', () => {
   // 已处理的最大事件 seq：重连时带给服务端做增量补发；逐条去重防重叠
   let lastSeq = 0
   let gapDetected = false
+  let everSynced = false
 
   function connect() {
     manualClose = false
@@ -37,6 +40,7 @@ export const useWsStore = defineStore('ws', () => {
         return
       }
       if (msg.type === 'synced') {
+        everSynced = true
         // 补发结束：若期间检测到 seq 跳变（缓冲溢出丢事件），让订阅方整体重拉
         if (gapDetected) {
           gapDetected = false
@@ -51,7 +55,7 @@ export const useWsStore = defineStore('ws', () => {
         if (seq > lastSeq + 1) gapDetected = true
         lastSeq = seq
       }
-      for (const h of handlers) h(msg.event, msg.args ?? [])
+      for (const h of handlers) h(msg.event, msg.args ?? [], !everSynced)
     }
   }
 

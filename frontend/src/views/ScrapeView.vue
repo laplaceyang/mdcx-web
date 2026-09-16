@@ -40,7 +40,7 @@ async function saveMediaPath() {
 
 onMounted(loadConfig)
 
-const activeTab = ref<'succ' | 'fail'>('succ')
+const activeTab = ref<'succ' | 'fail' | 'progress'>('succ')
 const selected = ref<ResultItem | null>(null)
 const resumeDialog = ref(false)
 const resumeInfo = ref<ResumeInfo | null>(null)
@@ -51,6 +51,20 @@ const nfoPath = ref('')
 const filtered = computed(() => scrape.results.filter((r) => r.status === activeTab.value))
 const succCount = computed(() => scrape.results.filter((r) => r.status === 'succ').length)
 const failCount = computed(() => scrape.results.filter((r) => r.status === 'fail').length)
+
+// ===== 刮削中页签：本次任务实时进度 =====
+const donePercent = computed(() => {
+  const c = scrape.status.counts
+  return c.total > 0 ? Math.round((c.done / c.total) * 100) : 0
+})
+const elapsedText = computed(() => {
+  const s = Math.max(0, Math.round(scrape.status.elapsed))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`
+})
 
 interface Row { number: string; title: string; actor: string; release: string }
 
@@ -249,6 +263,30 @@ function onSelectRow(item: ResultItem) {
                 </template>
               </el-table-column>
             </el-table>
+          </el-tab-pane>
+          <el-tab-pane name="progress">
+            <template #label>刮削中 ({{ scrape.status.counts.in_progress }})</template>
+            <div class="progress-pane">
+              <el-progress
+                :percentage="donePercent"
+                :stroke-width="16"
+                :status="scrape.running ? undefined : donePercent >= 100 ? 'success' : undefined"
+              />
+              <el-descriptions :column="3" size="small" border class="stat">
+                <el-descriptions-item label="任务总数">{{ scrape.status.counts.total }}</el-descriptions-item>
+                <el-descriptions-item label="已完成">{{ scrape.status.counts.done }}</el-descriptions-item>
+                <el-descriptions-item label="刮削中">{{ scrape.status.counts.in_progress }}</el-descriptions-item>
+                <el-descriptions-item label="成功">{{ scrape.status.counts.succ }}</el-descriptions-item>
+                <el-descriptions-item label="失败">{{ scrape.status.counts.fail }}</el-descriptions-item>
+                <el-descriptions-item label="已用时间">{{ elapsedText }}</el-descriptions-item>
+              </el-descriptions>
+              <pre class="current-file">{{ scrape.currentFileLabel || (scrape.running ? '（正在分配任务…）' : '（当前没有正在刮削的任务）') }}</pre>
+              <div v-if="scrape.scrapeInfo" class="eta">{{ scrape.scrapeInfo }}</div>
+              <div class="note">
+                统计为「本次任务」口径：每次点「开始刮削」都会清零重新累计；成功/失败按视频文件计数，
+                同一影片的多个分部（multi-part）会合并进输出目录的同一个文件夹。历史刮削成果以输出目录为准，本页不保留。
+              </div>
+            </div>
           </el-tab-pane>
         </el-tabs>
       </el-card>
@@ -458,5 +496,33 @@ function onSelectRow(item: ResultItem) {
 .warn {
   color: var(--el-color-danger);
   font-size: 13px;
+}
+.progress-pane {
+  padding: 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: calc(100vh - 320px);
+}
+.current-file {
+  margin: 0;
+  padding: 10px 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #606266;
+}
+.eta {
+  color: var(--el-color-primary);
+  font-size: 13px;
+}
+.note {
+  margin-top: auto;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.7;
 }
 </style>
