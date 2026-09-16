@@ -240,7 +240,15 @@ export interface ScrapeStatus {
   state: string
   progress: number
   results: number
-  counts: { succ: number; fail: number; done: number; total: number; skipped: number; restored: number }
+  counts: {
+    succ: number
+    fail: number
+    done: number
+    total: number
+    skipped: number
+    restored: number
+    in_progress: number
+  }
   elapsed: number
 }
 

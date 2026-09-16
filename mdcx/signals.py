@@ -38,6 +38,10 @@ EVENT_NAMES: tuple[str, ...] = (
 )
 
 
+# 详情日志缓冲上限：页面无人打开时没人调 get_log 排空，限制条数防止无限增长
+_DETAIL_LOG_MAX_LINES = 4000
+
+
 class _Event:
     """无头模式的轻量事件：emit 时同步回调订阅者（在发射者线程执行）。"""
 
@@ -73,7 +77,7 @@ class WebSignalBus:
 
     def __init__(self, replay_size: int = 2000) -> None:
         self.log_lock = threading.Lock()
-        self.detail_log_list: list[str] = []
+        self.detail_log_list: deque[str] = deque(maxlen=_DETAIL_LOG_MAX_LINES)
         self.stop = False
         self._events: dict[str, _BusEvent] = {}
         self._replay: deque[tuple[int, str, tuple[Any, ...]]] = deque(maxlen=replay_size)
@@ -104,7 +108,7 @@ class WebSignalBus:
     def get_log(self) -> str:
         with self.log_lock:
             text = "\n".join(self.detail_log_list)
-            self.detail_log_list = []
+            self.detail_log_list.clear()
         return text
 
     def show_traceback_log(self, text: str) -> None:

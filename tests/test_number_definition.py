@@ -82,6 +82,33 @@ def test_get_file_number_normalizes_uncensored_digit_numbers(raw_number: str, ex
 @pytest.mark.parametrize(
     ("raw_number", "expected_number"),
     [
+        (r"D:/test/FC2PPV-3902060-C.mp4", "FC2-PPV-3902060-C"),
+        (r"D:/test/FC2-PPV-3902060-C.mp4", "FC2-PPV-3902060-C"),
+        (r"D:/test/FC2PPV_3902060.mp4", "FC2-PPV-3902060"),
+        (r"D:/test/FC2-3902060.mp4", "FC2-PPV-3902060"),
+        (r"D:/test/FC2PPV-3902060-CD1.mp4", "FC2-PPV-3902060"),
+        (r"D:/test/FC2PPV-3902060.1080P.mp4", "FC2-PPV-3902060"),
+        (r"D:/test/HEYZO-1234-C.mp4", "HEYZO-1234"),
+    ],
+)
+def test_get_file_number_keeps_fc2_ppv_form(raw_number: str, expected_number: str):
+    assert get_file_number(raw_number, []) == expected_number
+
+
+def test_normalize_fc2_number_strips_non_digits():
+    """FC2 爬虫归一化：解析层保留的 -C/-U 后缀不得进入站点查询 id"""
+    from mdcx.crawlers.fc2 import normalize_fc2_number as fc2_normalize
+    from mdcx.crawlers.fc2ppvdb import normalize_fc2_number as ppvdb_normalize
+
+    assert fc2_normalize("FC2-PPV-3902060-C") == "3902060"
+    assert ppvdb_normalize("FC2-PPV-3902060-C") == "3902060"
+    assert fc2_normalize("FC2-3259498") == "3259498"
+    assert fc2_normalize("FC2PPV-1234567") == "1234567"
+
+
+@pytest.mark.parametrize(
+    ("raw_number", "expected_number"),
+    [
         (r"D:/test/LUXU-1488.mp4", "259LUXU-1488"),
         (r"D:/test/SCUTE-953.mp4", "229SCUTE-953"),
         (r"D:/test/MAAN-673.mp4", "300MAAN-673"),

@@ -290,7 +290,9 @@ def cookie_has_login_key(cookie_str: str) -> bool:
 
 
 def normalize_fc2_number(number: str) -> str:
-    return number.upper().replace("FC2PPV", "").replace("FC2-PPV-", "").replace("FC2-", "").replace("-", "").strip()
+    # 剥掉所有非数字（含解析层保留的 -C/-U 后缀），FC2PPVDB 只认纯数字 id
+    cleaned = number.upper().replace("FC2PPV", "").replace("FC2-PPV-", "").replace("FC2-", "").replace("-", "").strip()
+    return re.sub(r"\D", "", cleaned)
 
 
 def get_xhr_headers(article_url: str) -> dict[str, str]:

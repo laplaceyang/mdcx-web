@@ -142,6 +142,8 @@ class ScrapeJobManager:
                 "total": Flags.total_count,
                 "skipped": Flags.skipped_count,
                 "restored": Flags.restored_count,
+                # 已启动但尚未完成（在途）的任务数；已启动数由主循环在派发任务时累加
+                "in_progress": max(0, Flags.scrape_started - Flags.succ_count - Flags.fail_count),
             },
             "elapsed": round(time.time() - Flags.start_time, 1) if running and Flags.start_time else 0.0,
         }

@@ -195,6 +195,15 @@ def get_file_number(filepath: str, escape_string_list: list[str]) -> str:
     # 去除多余字符
     file_name = remove_escape_string1(real_name, escape_string_list) + "."
 
+    # FC2 系专用：保留 PPV 段与 -C/-U 后缀（FC2PPV-3902060-C -> FC2-PPV-3902060-C）。
+    # 必须走专用路径，避免被下方通用的 -C 剔除与 FC2 降级规则吃掉；
+    # 后缀仅收单个字母且后面不是字母数字（排除 -CD1 分集、-1080P 分辨率等）
+    if m := re.search(r"FC2[-_ ]?(?:PPV)?[-_ ]?(\d{5,})(?:[-_. ]([A-Z])(?![A-Z0-9]))?", file_name.upper()):
+        file_number = f"FC2-PPV-{m.group(1)}"
+        if m.group(2):
+            file_number += f"-{m.group(2)}"
+        return file_number
+
     # 替换cd_part、EP、-C
     filename = (
         file_name.replace("-C.", ".")

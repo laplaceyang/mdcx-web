@@ -244,7 +244,15 @@ async def _do_download_and_return(
         logs.append("🍊 使用 graphis.ne.jp 背景！ ")
         await fix_pic_async(bd_p, bd_p)
     if pic_ok or bd_ok:
-        return pic_p, bd_p, "".join(logs)
+        # 只返回确认下载成功的文件；失败一侧置 None 交给调用方回退
+        # （头像走 gfriends，背景从头像派生）。否则会把不存在的路径
+        # 传进上传环节导致 FileNotFoundError。
+        pic_ret = pic_p if pic_ok else None
+        bd_ret = bd_p if bd_ok else None
+        if bd_ret is None and EmbyAction.GRAPHIS_BACKDROP not in emby_on and await aiofiles.os.path.isfile(bd_p):
+            bd_ret = bd_p
+        if pic_ret or bd_ret:
+            return pic_ret, bd_ret, "".join(logs)
     return None
 
 
@@ -335,7 +343,9 @@ async def _update_emby_actor_photo_execute(actor_list: list[dict], gfriends_acto
                 pic_path = file_path
             pic_path = cast(Path, pic_path)
 
-            # 检查背景是否存在
+            # 检查背景是否存在（graphis 只下到头像、或背景文件缺失时，从头像派生）
+            if backdrop_path and not await aiofiles.os.path.isfile(backdrop_path):
+                await fix_pic_async(pic_path, backdrop_path)
             if not backdrop_path:
                 backdrop_path = pic_path.with_name(pic_path.stem + "-big.jpg")
                 if not await aiofiles.os.path.isfile(backdrop_path):
@@ -355,9 +365,17 @@ async def _update_emby_actor_photo_execute(actor_list: list[dict], gfriends_acto
                         await computed.async_client.request("DELETE", del_url, headers=headers, use_proxy=False)
 
             # 头像和背景分别上传，避免头像成功时背景被跳过。
-            pic_ok, pic_err = await _upload_actor_photo(pic_url, pic_path)
+            pic_ok, pic_err = (
+                await _upload_actor_photo(pic_url, pic_path)
+                if await aiofiles.os.path.isfile(pic_path)
+                else (False, "头像文件不存在")
+            )
             _raise_if_stop_requested()
-            backdrop_ok, backdrop_err = await _upload_actor_photo(backdrop_url, backdrop_path)
+            backdrop_ok, backdrop_err = (
+                await _upload_actor_photo(backdrop_url, backdrop_path)
+                if await aiofiles.os.path.isfile(backdrop_path)
+                else (False, "背景文件不存在")
+            )
             _raise_if_stop_requested()
             if pic_ok and backdrop_ok:
                 if not logs or logs == "🍊 graphis.ne.jp 无结果！":

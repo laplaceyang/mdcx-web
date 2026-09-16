@@ -10,7 +10,9 @@ const scrape = useScrapeStore()
 
 const countsText = computed(() => {
   const c = scrape.status.counts
-  const parts = [`成功 ${c.succ}`, `失败 ${c.fail}`, `已完成 ${c.done}`, `共 ${c.total}`]
+  const parts: string[] = []
+  if (scrape.running && c.in_progress > 0) parts.push(`刮削中 ${c.in_progress}`)
+  parts.push(`成功 ${c.succ}`, `失败 ${c.fail}`, `已完成 ${c.done}`, `共 ${c.total}`)
   if (c.skipped > 0) parts.push(`跳过 ${c.skipped}`)
   if (c.restored > 0) parts.push(`恢复重刮 ${c.restored}`)
   return parts.join(' / ')
@@ -48,7 +50,9 @@ onUnmounted(() => {})
     <el-container>
       <el-main class="main"><router-view /></el-main>
       <el-footer height="52px" class="global-bar">
-        <span class="info" :title="scrape.scrapeInfo">{{ scrape.scrapeInfo || '就绪' }}</span>
+        <span class="info" :title="scrape.currentFileLabel || scrape.scrapeInfo">{{
+          scrape.currentFileLabel || scrape.scrapeInfo || '就绪'
+        }}</span>
         <el-progress
           :percentage="scrape.status.progress"
           :stroke-width="14"
