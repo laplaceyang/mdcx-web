@@ -24,6 +24,18 @@ def status():
     return job_manager.status()
 
 
+@router.get("/active")
+def active():
+    """在途刮削条目快照（「刮削中」卡片视图，前端 1s 轮询）。
+
+    任务已结束（idle）时在途条目视为陈旧残留（停止硬杀可能跳过 finally），不再返回。
+    """
+    from mdcx.core import scrape_live
+
+    running = job_manager.state == "running"
+    return {"items": scrape_live.snapshot() if running or job_manager.state == "stopping" else [], "running": running}
+
+
 @router.get("/resume-info")
 def resume_info():
     info = job_manager.resume_info()

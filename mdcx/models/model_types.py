@@ -493,6 +493,8 @@ class OtherInfo:
     poster_big: bool
     poster_size: tuple[int, int]
     thumb_size: tuple[int, int]
+    # 失败原因（仅失败结果填充，随 show_list_name 推送给前端失败卡片）
+    fail_reason: str = ""
 
     @classmethod
     def empty(cls) -> "OtherInfo":

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { api, mediaUrl, videoUrl, type ResultItem, type ResumeInfo } from '../api/client'
+import { api, mediaUrl, videoUrl, type ActiveItem, type ResultItem, type ResumeInfo } from '../api/client'
 import { useScrapeStore } from '../stores/scrape'
 import DirPicker from '../components/DirPicker.vue'
+import ScrapeCard from '../components/ScrapeCard.vue'
 
 const scrape = useScrapeStore()
 
@@ -40,7 +41,7 @@ async function saveMediaPath() {
 
 onMounted(loadConfig)
 
-const activeTab = ref<'succ' | 'fail' | 'progress'>('succ')
+const activeTab = ref<'all' | 'succ' | 'fail' | 'progress'>('all')
 const selected = ref<ResultItem | null>(null)
 const resumeDialog = ref(false)
 const resumeInfo = ref<ResumeInfo | null>(null)
@@ -48,7 +49,6 @@ const nfoDialog = ref(false)
 const nfoText = ref('')
 const nfoPath = ref('')
 
-const filtered = computed(() => scrape.results.filter((r) => r.status === activeTab.value))
 const succCount = computed(() => scrape.results.filter((r) => r.status === 'succ').length)
 const failCount = computed(() => scrape.results.filter((r) => r.status === 'fail').length)
 
@@ -66,6 +66,43 @@ const elapsedText = computed(() => {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`
 })
 
+// ===== 刮削中卡片：在途条目快照轮询（页签可见且任务活跃时 1s 一次） =====
+const activeItems = ref<ActiveItem[]>([])
+let activeTimer: number | undefined
+
+async function pollActive() {
+  try {
+    activeItems.value = (await api.scrapeActive()).items
+  } catch {
+    /* 服务未就绪时静默 */
+  }
+}
+
+watch(
+  [activeTab, () => scrape.running, () => scrape.stopping],
+  ([tab, running, stopping]) => {
+    window.clearInterval(activeTimer)
+    activeTimer = undefined
+    if (tab !== 'progress') return
+    void pollActive()
+    if (running || stopping) activeTimer = window.setInterval(pollActive, 1000)
+  },
+  { immediate: true },
+)
+onUnmounted(() => window.clearInterval(activeTimer))
+
+function fmtDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds))
+  if (s < 60) return `${s} 秒`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} 分 ${s % 60} 秒`
+  return `${Math.floor(m / 60)} 时 ${m % 60} 分`
+}
+
+function fmtClock(epochSeconds: number): string {
+  return new Date(epochSeconds * 1000).toLocaleTimeString('zh-CN', { hour12: false })
+}
+
 interface Row { number: string; title: string; actor: string; release: string }
 
 function toRow(item: ResultItem): Row {
@@ -79,7 +116,72 @@ function toRow(item: ResultItem): Row {
   }
 }
 
-const tableRows = computed(() => filtered.value.map((r) => ({ item: r, ...toRow(r) })))
+// ===== 成功页签：与「刮削中」一致的卡片视图 =====
+interface SuccCard {
+  key: string
+  item: ResultItem
+  number: string
+  title: string
+  actors: string
+  release: string
+  score: string
+  image: string | null
+  filePath: string
+}
+
+function toSuccCard(item: ResultItem): SuccCard {
+  const row = toRow(item)
+  const filePath = String(item.show?.file_info?.file_path ?? '')
+  return {
+    key: `${item.real_number}|${filePath}`,
+    item,
+    number: row.number,
+    title: row.title,
+    actors: row.actor,
+    release: row.release,
+    score: String((item.show?.data as Record<string, unknown>)?.score ?? ''),
+    image: mediaUrl(item.show?.other?.poster_path || item.show?.other?.thumb_path),
+    filePath,
+  }
+}
+
+// 大批量刮削时一次性渲染上万张卡片会卡顿，先渲染前 succLimit 张
+const succLimit = ref(200)
+const succCardsAll = computed(() => scrape.results.filter((r) => r.status === 'succ').map(toSuccCard))
+const succCards = computed(() => succCardsAll.value.slice(0, succLimit.value))
+const succRemain = computed(() => succCardsAll.value.length - succCards.value.length)
+
+// ===== 失败页签：与成功一致的卡片视图 + 失败原因 + 重刮操作 =====
+interface FailCard {
+  key: string
+  item: ResultItem
+  number: string
+  fileName: string
+  filePath: string
+  reason: string
+}
+
+const failLimit = ref(200)
+const failCardsAll = computed(() =>
+  scrape.results
+    .filter((r) => r.status === 'fail')
+    .map((item) => {
+      const fi = (item.show?.file_info ?? {}) as Record<string, unknown>
+      const filePath = String(fi.file_path ?? '')
+      const fileName =
+        String(fi.file_show_name ?? '') || filePath.replace(/\\/g, '/').split('/').pop() || filePath
+      return {
+        key: `${item.real_number}|${filePath}`,
+        item,
+        number: item.real_number || '未知番号',
+        fileName,
+        filePath,
+        reason: String(item.show?.other?.fail_reason ?? '') || '未知错误',
+      }
+    }),
+)
+const failCards = computed(() => failCardsAll.value.slice(0, failLimit.value))
+const failRemain = computed(() => failCardsAll.value.length - failCards.value.length)
 
 const detail = computed(() => {
   if (!selected.value) return null
@@ -141,6 +243,8 @@ async function onStop() {
 
 async function onClear() {
   await api.clearResults()
+  succLimit.value = 200
+  failLimit.value = 200
   scrape.resetResults([])
   selected.value = null
 }
@@ -223,50 +327,15 @@ function onSelectRow(item: ResultItem) {
       <el-button type="danger" :disabled="!scrape.running" @click="onStop">停止</el-button>
       <el-button :disabled="scrape.running || scrape.stopping" @click="doStart('again')">按失败列表重刮</el-button>
       <el-button plain @click="onClear">清空结果</el-button>
-      <span class="hint">右键结果行：播放 / 查看 NFO / 重刮</span>
+      <span class="hint">单击卡片看详情；右键卡片：播放 / 查看 NFO / 重刮</span>
     </el-card>
 
     <div class="content">
       <el-card class="results" shadow="never">
         <el-tabs v-model="activeTab">
-          <el-tab-pane name="succ">
-            <template #label>成功 ({{ succCount }})</template>
-            <el-table
-              :data="tableRows"
-              height="calc(100vh - 320px)"
-              size="small"
-              highlight-current-row
-              @row-click="({ item }: any) => onSelectRow(item)"
-              @row-contextmenu="({ item }: any, _col: any, ev: MouseEvent) => onRowContext(ev, item)"
-            >
-              <el-table-column prop="number" label="番号" width="160" />
-              <el-table-column prop="title" label="标题" min-width="300" show-overflow-tooltip />
-              <el-table-column prop="actor" label="演员" min-width="150" show-overflow-tooltip />
-              <el-table-column prop="release" label="发行日期" width="110" />
-            </el-table>
-          </el-tab-pane>
-          <el-tab-pane name="fail">
-            <template #label>失败 ({{ failCount }})</template>
-            <el-table
-              :data="tableRows"
-              height="calc(100vh - 320px)"
-              size="small"
-              highlight-current-row
-              @row-click="({ item }: any) => onSelectRow(item)"
-              @row-contextmenu="({ item }: any, _col: any, ev: MouseEvent) => onRowContext(ev, item)"
-            >
-              <el-table-column prop="number" label="番号" width="160" />
-              <el-table-column prop="title" label="文件" min-width="300" show-overflow-tooltip />
-              <el-table-column label="操作" width="90">
-                <template #default="{ row }">
-                  <el-button size="small" text type="primary" @click.stop="selected = row.item; onRescrape()">重刮</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-tab-pane>
-          <el-tab-pane name="progress">
-            <template #label>刮削中 ({{ scrape.status.counts.in_progress }})</template>
-            <div class="progress-pane">
+          <el-tab-pane name="all">
+            <template #label>全部</template>
+            <div class="all-pane">
               <el-progress
                 :percentage="donePercent"
                 :stroke-width="16"
@@ -280,11 +349,110 @@ function onSelectRow(item: ResultItem) {
                 <el-descriptions-item label="失败">{{ scrape.status.counts.fail }}</el-descriptions-item>
                 <el-descriptions-item label="已用时间">{{ elapsedText }}</el-descriptions-item>
               </el-descriptions>
-              <pre class="current-file">{{ scrape.currentFileLabel || (scrape.running ? '（正在分配任务…）' : '（当前没有正在刮削的任务）') }}</pre>
-              <div v-if="scrape.scrapeInfo" class="eta">{{ scrape.scrapeInfo }}</div>
+              <pre class="current-file">{{
+                scrape.currentFileLabel || (scrape.running ? '（正在分配任务…）' : '（当前没有正在刮削的任务）')
+              }}</pre>
+              <div v-if="scrape.scrapeInfo" class="eta-line">{{ scrape.scrapeInfo }}</div>
               <div class="note">
                 统计为「本次任务」口径：每次点「开始刮削」都会清零重新累计；成功/失败按视频文件计数，
                 同一影片的多个分部（multi-part）会合并进输出目录的同一个文件夹。历史刮削成果以输出目录为准，本页不保留。
+              </div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane name="succ">
+            <template #label>成功 ({{ succCount }})</template>
+            <div class="succ-pane">
+              <div v-if="succCards.length" class="cards">
+                <ScrapeCard
+                  v-for="c in succCards"
+                  :key="c.key"
+                  :number="c.number"
+                  :title="c.title"
+                  :title-fallback="c.filePath"
+                  :actors="c.actors"
+                  :image="c.image"
+                  placeholder="暂无封面"
+                  :footer="c.filePath"
+                  :selected="selected === c.item"
+                  @click="onSelectRow(c.item)"
+                  @contextmenu="(ev: MouseEvent) => onRowContext(ev, c.item)"
+                >
+                  <template #meta>
+                    <span v-if="c.release">📅 {{ c.release }}</span>
+                    <span v-if="c.score">⭐ {{ c.score }}</span>
+                  </template>
+                </ScrapeCard>
+              </div>
+              <el-empty v-else description="暂无成功结果" :image-size="80" />
+              <div v-if="succRemain > 0" class="load-more">
+                <el-button text type="primary" @click="succLimit += 500">
+                  显示更多（还有 {{ succRemain }} 个）
+                </el-button>
+              </div>
+              <div v-if="succCards.length" class="note">
+                单击卡片查看详情，右键卡片：播放 / 查看 NFO / 重刮。历史刮削成果以输出目录为准，本页仅保留本次任务结果。
+              </div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane name="progress">
+            <template #label>刮削中 ({{ scrape.status.counts.in_progress }})</template>
+            <div class="progress-pane">
+              <div v-if="activeItems.length" class="cards">
+                <ScrapeCard
+                  v-for="it in activeItems"
+                  :key="it.file_path"
+                  :number="it.number || '识别番号中…'"
+                  :title="it.title"
+                  :title-fallback="it.show_path"
+                  :actors="it.actors"
+                  :image="mediaUrl(it.poster || it.thumb)"
+                  placeholder="等待封面"
+                  :footer="it.last_log || '正在启动…'"
+                  :footer-tooltip="(it.logs || []).join('\n')"
+                >
+                  <template #meta>
+                    <span>⏱ {{ fmtDuration(it.elapsed) }}</span>
+                    <span>开始于 {{ fmtClock(it.started_at) }}</span>
+                  </template>
+                </ScrapeCard>
+              </div>
+              <el-empty
+                v-else
+                :description="scrape.running ? '正在分配任务…' : '当前没有正在刮削的任务'"
+                :image-size="80"
+              />
+            </div>
+          </el-tab-pane>
+          <el-tab-pane name="fail">
+            <template #label>失败 ({{ failCount }})</template>
+            <div class="fail-pane">
+              <div v-if="failCards.length" class="cards">
+                <ScrapeCard
+                  v-for="c in failCards"
+                  :key="c.key"
+                  :number="c.number"
+                  :title="c.fileName"
+                  :actors="''"
+                  :image="null"
+                  placeholder="无封面"
+                  :error="c.reason"
+                  :footer="c.filePath"
+                  :selected="selected === c.item"
+                  @click="onSelectRow(c.item)"
+                  @contextmenu="(ev: MouseEvent) => onRowContext(ev, c.item)"
+                >
+                  <template #meta>
+                    <el-button size="small" text type="primary" @click.stop="selected = c.item; onRescrape()">
+                      🔄 重刮
+                    </el-button>
+                  </template>
+                </ScrapeCard>
+              </div>
+              <el-empty v-else description="暂无失败结果" :image-size="80" />
+              <div v-if="failRemain > 0" class="load-more">
+                <el-button text type="primary" @click="failLimit += 500">
+                  显示更多（还有 {{ failRemain }} 个）
+                </el-button>
               </div>
             </div>
           </el-tab-pane>
@@ -497,6 +665,9 @@ function onSelectRow(item: ResultItem) {
   color: var(--el-color-danger);
   font-size: 13px;
 }
+.all-pane,
+.succ-pane,
+.fail-pane,
 .progress-pane {
   padding: 16px 8px;
   display: flex;
@@ -507,7 +678,7 @@ function onSelectRow(item: ResultItem) {
 .current-file {
   margin: 0;
   padding: 10px 12px;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
   border-radius: 6px;
   font-size: 12px;
   font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -515,9 +686,19 @@ function onSelectRow(item: ResultItem) {
   word-break: break-all;
   color: #606266;
 }
-.eta {
+.eta-line {
   color: var(--el-color-primary);
   font-size: 13px;
+}
+.load-more {
+  display: flex;
+  justify-content: center;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 10px;
+  align-content: start;
 }
 .note {
   margin-top: auto;

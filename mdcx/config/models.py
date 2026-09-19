@@ -297,16 +297,16 @@ class Config(BaseModel):
     thread_number: int = Field(default=50, title="并发数")
     thread_time: int = Field(default=0, title="线程时间")
     javdb_time: int = Field(default=10, title="Javdb时间")
-    main_mode: int = Field(default=1, title="主模式")
-    read_mode: list[ReadMode] = Field(default_factory=list, title="读取模式")
-    update_mode: str = Field(default="c", title="更新模式")
-    update_a_folder: str = Field(default="{{ actor }}", title="更新A目录")
-    update_b_folder: str = Field(default="{{ number }} {{ actor }}", title="更新B目录")
-    update_c_filetemplate: str = Field(default="{{ number }}", title="更新C文件模板")
-    update_d_folder: str = Field(default="{{ number }} {{ actor }}", title="更新D目录")
+    main_mode: int = Field(default=1, title="工作模式")
+    read_mode: list[ReadMode] = Field(default_factory=list, title="读取模式选项")
+    update_mode: str = Field(default="c", title="更新方式")
+    update_a_folder: str = Field(default="{{ actor }}", title="更新·第一级目录模板（A）")
+    update_b_folder: str = Field(default="{{ number }} {{ actor }}", title="更新·番号目录模板（B）")
+    update_c_filetemplate: str = Field(default="{{ number }}", title="更新·文件名模板（C）")
+    update_d_folder: str = Field(default="{{ number }} {{ actor }}", title="更新·子目录模板（D）")
     update_titletemplate: str = Field(
         default="{% if number %}{{ number }}{% endif %}{% if title and title != number %} {{ title }}{% endif %}",
-        title="更新标题模板",
+        title="更新·NFO 标题模板",
     )
     soft_link: int = Field(default=0, title="软链接")
     success_file_move: bool = Field(default=True, title="成功后移动文件")

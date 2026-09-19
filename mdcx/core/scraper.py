@@ -35,6 +35,7 @@ from ..config.extend import get_movie_path_setting, parse_media_paths
 from ..config.manager import manager
 from ..config.resources import resources
 from ..core.scrape_cache import MAX_RETRY_COUNT, ScrapeStateCache
+from ..core import scrape_live
 from ..core.tmdb_actor import _normalize_translation
 from ..crawler import CrawlerProvider
 from ..models.enums import FileMode
@@ -420,11 +421,12 @@ class Scraper:
         # 本任务派生的子协程（fanart/poster/TMDB 等）与 to_thread 线程写入
         # 都归入本组，get() 只聚合本组——避免别的影片的失败原因混入
         # 本片的 failed_list/断点缓存（跨任务日志污染），finally 整树回收。
-        LogBuffer.new_root()
+        root = LogBuffer.new_root()
         try:
             await self._process_one_file_impl(task)
         finally:
             LogBuffer.clear_task()
+            scrape_live.finish_root(root)  # 「刮削中」实时卡片：任务退出（含停止/异常）即移除在途条目
 
     async def _release_shared_status(self, *numbers: object) -> None:
         """释放共享番号状态：标记为失败并唤醒等待方。
@@ -498,6 +500,10 @@ class Scraper:
         folder_old_path = file_info.folder_path
         file_show_name = file_info.file_show_name
         file_show_path = file_info.file_show_path
+
+        # 「刮削中」实时卡片：注册在途条目，并把本任务组的日志实时归因到条目
+        scrape_live.start_item(str(file_path), file_show_path, number)
+        scrape_live.bind_root(LogBuffer.current_root(), str(file_path))
 
         # 显示刮削信息
         progress_value = Flags.scrape_started / count_all * 100
@@ -607,8 +613,10 @@ class Scraper:
                     + ("-" if file_info.definition else "")
                     + file_info.definition
                 )
-                signal.show_list_name("fail", show_data, number)
                 error_msg = LogBuffer.error().get(only_self=True) or scrape_error or "未知错误"
+                # 失败原因随结果推送（失败卡片展示）；压成单行便于前端截断显示
+                show_data.other.fail_reason = " ".join(error_msg.split())
+                signal.show_list_name("fail", show_data, number)
                 LogBuffer.log().write(f"\n 🔴 [Failed] Reason: {error_msg}")
                 if "WinError 5" in error_msg:
                     LogBuffer.log().write(
@@ -1122,6 +1130,9 @@ class Scraper:
         # 显示json_data内容
         show_movie_info(file_info, res)
 
+        # 「刮削中」实时卡片：标题/演员已定稿，补齐条目元数据
+        scrape_live.update_item(str(file_path), number=res.number, title=res.title, actors=res.actors)
+
         # 读模式不勾"重新整理分类"时跳过路径计算
         skip_reorganize = manager.config.main_mode == 4 and is_nfo_existed and ReadMode.HAS_NFO_UPDATE not in read_mode
 
@@ -1280,6 +1291,10 @@ class Scraper:
                 single_folder_catched,
             ):
                 return None, None
+
+        # 「刮削中」实时卡片：图片已落盘即可展示（此后仅剩 nfo/移动/压缩等收尾步骤）
+        if poster_final_path is not None:
+            scrape_live.update_item(str(file_path), poster=str(poster_final_path), thumb=str(thumb_final_path))
 
         if file_can_download:
             # trailer 有带文件名、不带文件名两种命名方式，不能依赖图片处理权。

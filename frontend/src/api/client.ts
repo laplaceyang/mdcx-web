@@ -36,6 +36,7 @@ export const api = {
   switchConfig: (name: string) => request<{ ok: boolean; errors: string[] }>('/api/config/switch', 'POST', { name }),
   resetConfig: () => request<{ ok: boolean; errors: string[] }>('/api/config/reset', 'POST'),
   scrapeStatus: () => request<ScrapeStatus>('/api/scrape/status'),
+  scrapeActive: () => request<{ items: ActiveItem[]; running: boolean }>('/api/scrape/active'),
   scrapeResults: (status?: string) =>
     request<{ items: ResultItem[] }>(`/api/scrape/results${status ? `?status=${status}` : ''}`),
   clearResults: () => request('/api/scrape/results', 'DELETE'),
@@ -258,6 +259,21 @@ export interface ResultItem {
   show: ShowData
 }
 
+/** 在途刮削条目（/api/scrape/active，刮削中卡片视图） */
+export interface ActiveItem {
+  file_path: string
+  show_path: string
+  number: string
+  title: string
+  actors: string
+  poster: string
+  thumb: string
+  started_at: number
+  elapsed: number
+  last_log: string
+  logs: string[]
+}
+
 export interface ResumeInfo {
   available: boolean
   count?: number
@@ -278,7 +294,7 @@ export interface NetworkResult {
 interface ShowData {
   file_info: Record<string, unknown>
   data: Record<string, unknown>
-  other: { poster_path?: string | null; thumb_path?: string | null }
+  other: { poster_path?: string | null; thumb_path?: string | null; fail_reason?: string }
   show_name: string
 }
 

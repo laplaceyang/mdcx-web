@@ -69,6 +69,7 @@ const resolved = computed(() => resolve(props.node))
 
 const kind = computed(() => {
   const r = resolved.value
+  if (r['x-options']) return 'xoptions'
   if (r.type === 'boolean') return 'switch'
   if (r.type === 'integer' || r.type === 'number') return 'number'
   if (r.enum) return 'select'
@@ -81,7 +82,46 @@ const kind = computed(() => {
   return 'json'
 })
 
-const enumOptions = computed(() => (resolved.value.enum ?? []).map((v: any) => String(v)))
+interface OptionItem {
+  value: string
+  label: string
+}
+
+// 枚举中文标签：schema 的 $defs 上可能带 x-enum-names（与取值按序对齐），没有则退回原值
+function enumItems(enumValues: string[], names?: string[]): OptionItem[] {
+  if (names && names.length === enumValues.length) {
+    return enumValues.map((v, i) => ({ value: v, label: names[i] }))
+  }
+  return enumValues.map((v) => ({ value: v, label: v }))
+}
+
+const enumOptions = computed<OptionItem[]>(() =>
+  enumItems((resolved.value.enum ?? []).map((v: any) => String(v)), resolved.value['x-enum-names']),
+)
+
+interface XOption {
+  value: any
+  label: string
+  description?: string
+  code?: string
+}
+
+// 选项卡片（工作模式/更新方式）：当前值不在选项里时（旧配置的非标准值）补一张卡，避免丢显示
+const xOptions = computed<XOption[]>(() => {
+  const opts = (resolved.value['x-options'] ?? []) as XOption[]
+  const cur = props.modelValue
+  if (cur !== undefined && cur !== null && !opts.some((o) => o.value === cur)) {
+    return [...opts, { value: cur, label: String(cur), description: '当前配置中的非标准值' }]
+  }
+  return opts
+})
+
+const enumTagItems = computed<OptionItem[]>(() =>
+  enumItems(
+    (resolved.value.items?.enum ?? []).map((v: any) => String(v)),
+    resolved.value.items?.['x-enum-names'],
+  ),
+)
 
 const isDirField = computed(() => DIR_FIELDS.has(props.fieldName ?? ''))
 const isFileField = computed(() => FILE_FIELDS.has(props.fieldName ?? ''))
@@ -124,7 +164,21 @@ function updateField(key: string, value: any) {
 
 <template>
   <!-- 标量控件 -->
-  <template v-if="kind === 'switch'">
+  <!-- 选项卡片：带说明的单选（工作模式/更新方式） -->
+  <template v-if="kind === 'xoptions'">
+    <el-radio-group :model-value="modelValue" class="x-options" @update:model-value="update">
+      <el-radio v-for="opt in xOptions" :key="String(opt.value)" :value="opt.value" border class="x-option">
+        <div class="x-option-body">
+          <div class="x-option-head">
+            <span class="x-option-label">{{ opt.label }}</span>
+            <el-tag v-if="opt.code" size="small" type="info" class="x-option-code">{{ opt.code }}</el-tag>
+          </div>
+          <div v-if="opt.description" class="x-option-desc">{{ opt.description }}</div>
+        </div>
+      </el-radio>
+    </el-radio-group>
+  </template>
+  <template v-else-if="kind === 'switch'">
     <el-switch :model-value="!!modelValue" @update:model-value="update" />
   </template>
   <template v-else-if="kind === 'number'">
@@ -146,7 +200,7 @@ function updateField(key: string, value: any) {
       @update:model-value="update"
     >
       <el-option v-if="resolved.nullable" label="（无）" value="" />
-      <el-option v-for="v in enumOptions" :key="v" :label="v" :value="v" />
+      <el-option v-for="o in enumOptions" :key="o.value" :label="o.label" :value="o.value" />
     </el-select>
   </template>
   <template v-else-if="kind === 'tags' && isListDirField">
@@ -162,10 +216,10 @@ function updateField(key: string, value: any) {
         :placeholder="resolved.description || '按顺序选择（先选的优先）'"
         @update:model-value="update"
       >
-        <el-option v-for="v in (resolved.items?.enum ?? []).map((v: any) => String(v))" :key="v" :label="v" :value="v" />
+        <el-option v-for="o in enumTagItems" :key="o.value" :label="o.label" :value="o.value" />
       </el-select>
       <div v-if="(modelValue as string[])?.length" class="order-line">
-        当前顺序：<el-tag v-for="(v, i) in (modelValue as string[])" :key="v" size="small" class="order-tag">{{ Number(i) + 1 }}. {{ v }}</el-tag>
+        当前顺序：<el-tag v-for="(v, i) in (modelValue as string[])" :key="v" size="small" class="order-tag">{{ Number(i) + 1 }}. {{ enumTagItems.find((o) => o.value === v)?.label ?? v }}</el-tag>
       </div>
     </div>
   </template>
@@ -295,5 +349,41 @@ function updateField(key: string, value: any) {
 }
 .order-tag {
   font-family: ui-monospace, Menlo, monospace;
+}
+.x-options {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.x-options :deep(.el-radio) {
+  margin-right: 0;
+  height: auto;
+  align-items: flex-start;
+  padding: 8px 12px;
+}
+.x-options :deep(.el-radio__input) {
+  margin-top: 4px;
+}
+.x-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.x-option-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.x-option-label {
+  font-weight: 600;
+}
+.x-option-code {
+  font-family: ui-monospace, Menlo, monospace;
+}
+.x-option-desc {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.4;
 }
 </style>
