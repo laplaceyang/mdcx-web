@@ -1,6 +1,7 @@
 import asyncio
 import contextvars
 import threading
+from collections.abc import Callable
 
 try:
     from warnings import deprecated
@@ -17,6 +18,9 @@ class LogBuffer:
     _lock = threading.Lock()
     all_buffers: dict[int, dict[str, "LogBuffer"]] = {}
     global_buffer = None
+    # 实时日志 tap：root → 回调。write 时若本任务组注册了 tap，则把该行同步推给
+    # 回调（在途刮削条目的「最新进展」数据源）。回调必须自己吞异常、快速返回。
+    _taps: dict[int, Callable[[str], None]] = {}
 
     # 任务树归因：记录"当前逻辑任务组"的根 task_id。
     # asyncio.create_task 会拷贝当前 context，子协程自动继承同一 root——
@@ -87,7 +91,9 @@ class LogBuffer:
             if root not in LogBuffer.all_buffers:
                 LogBuffer.all_buffers[root] = {}
             if category not in LogBuffer.all_buffers[root]:
-                LogBuffer.all_buffers[root][category] = LogBuffer()
+                buf = LogBuffer()
+                buf._root = root
+                LogBuffer.all_buffers[root][category] = buf
             return LogBuffer.all_buffers[root][category]
 
     @staticmethod
@@ -103,6 +109,7 @@ class LogBuffer:
             return
         with LogBuffer._lock:
             LogBuffer.all_buffers.pop(root, None)
+            LogBuffer._taps.pop(root, None)
             # root 归因下，后代任务的 task_id 不在 all_buffers 顶层键中
             # （写入时统一落 root 键），此处一次 pop 即整树回收。
             # 兼容旧形态：无 root 的裸线程/遗留键按自身 id 落键的，同样弹出。
@@ -148,6 +155,7 @@ class LogBuffer:
 
     def __init__(self):
         self.buffer = []
+        self._root: int | None = None
 
     def write(self, message, with_task_name=False):
         """
@@ -164,6 +172,10 @@ class LogBuffer:
             if self.buffer and self.buffer[-1] == message:
                 return
             self.buffer.append(message)
+        if self._root is not None and LogBuffer._taps:
+            tap = LogBuffer._taps.get(self._root)
+            if tap is not None:
+                tap(message)
 
     def get(self, only_self: bool = False):
         """取本任务组的聚合日志（自己 + 派生后代），不含陌生兄弟任务。
@@ -197,6 +209,22 @@ class LogBuffer:
         if len(self.buffer) == 0:
             return ""
         return self.buffer[-1]
+
+    @classmethod
+    def bind_tap(cls, root: int, callback: Callable[[str], None]) -> None:
+        """为本任务组注册实时日志回调（重复绑定覆盖旧回调）。"""
+        with cls._lock:
+            cls._taps[root] = callback
+
+    @classmethod
+    def remove_tap(cls, root: int) -> None:
+        with cls._lock:
+            cls._taps.pop(root, None)
+
+    @classmethod
+    def current_root(cls) -> int | None:
+        """当前协程/线程所属任务组的 root id（未归组时为自身 id）。"""
+        return cls._current_root()
 
     def clear(self):
         with LogBuffer._lock:

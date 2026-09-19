@@ -58,6 +58,9 @@ class ScrapeJobManager:
             self.results.clear()
             self.progress = 0
             self.started_at = time.time()
+        from mdcx.core import scrape_live
+
+        scrape_live.reset()  # 「刮削中」实时卡片：新任务从空白开始
         start_new_scrape(mode, [Path(p) for p in movie_list] if movie_list else None)
 
     def start_resume(self, remain_list: list) -> None:
@@ -67,6 +70,9 @@ class ScrapeJobManager:
             self.results.clear()
             self.progress = 0
             self.started_at = time.time()
+        from mdcx.core import scrape_live
+
+        scrape_live.reset()
         start_resume_scrape([Path(p) for p in remain_list])
 
     def start_single(self, file_path: str, appoint_url: str) -> None:
@@ -92,6 +98,9 @@ class ScrapeJobManager:
             self.started_at = time.time()
         from mdcx.models.flags import Flags
 
+        from mdcx.core import scrape_live
+
+        scrape_live.reset()
         Flags.single_file_path = Path(file_path)
         Flags.appoint_url = appoint_url.strip()
         Flags.website_name = website
