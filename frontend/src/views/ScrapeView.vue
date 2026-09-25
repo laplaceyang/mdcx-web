@@ -5,8 +5,11 @@ import { api, mediaUrl, videoUrl, type ActiveItem, type ResultItem, type ResumeI
 import { useScrapeStore } from '../stores/scrape'
 import DirPicker from '../components/DirPicker.vue'
 import ScrapeCard from '../components/ScrapeCard.vue'
+import ManualScrapeDialog from '../components/ManualScrapeDialog.vue'
 
 const scrape = useScrapeStore()
+// 手动刮削对话框（与软件工具-单文件刮削共用组件）
+const scrapeDialogRef = ref<InstanceType<typeof ManualScrapeDialog>>()
 
 // 媒体路径（开始刮削左侧展示，可就地修改并自动保存；手动输入防抖）
 const mediaPath = ref('')
@@ -52,11 +55,7 @@ const nfoPath = ref('')
 const succCount = computed(() => scrape.results.filter((r) => r.status === 'succ').length)
 const failCount = computed(() => scrape.results.filter((r) => r.status === 'fail').length)
 
-// ===== 刮削中页签：本次任务实时进度 =====
-const donePercent = computed(() => {
-  const c = scrape.status.counts
-  return c.total > 0 ? Math.round((c.done / c.total) * 100) : 0
-})
+// ===== 本次任务实时进度（donePercent 用 store 的共享口径，与底栏一致） =====
 const elapsedText = computed(() => {
   const s = Math.max(0, Math.round(scrape.status.elapsed))
   const h = Math.floor(s / 3600)
@@ -304,6 +303,12 @@ async function onRescrape() {
   }
 }
 
+// 失败卡片的手动刮削：人工填元数据，NFO/封面/视频整理进番号目录；
+// 番号提取失败时回退用任务识别出的番号
+function onManualScrape(c: FailCard) {
+  scrapeDialogRef.value?.open({ mode: 'scrape', videoPath: c.filePath, number: c.item.real_number || '' })
+}
+
 function onSelectRow(item: ResultItem) {
   selected.value = item
 }
@@ -337,9 +342,9 @@ function onSelectRow(item: ResultItem) {
             <template #label>全部</template>
             <div class="all-pane">
               <el-progress
-                :percentage="donePercent"
+                :percentage="scrape.donePercent"
                 :stroke-width="16"
-                :status="scrape.running ? undefined : donePercent >= 100 ? 'success' : undefined"
+                :status="scrape.running ? undefined : scrape.donePercent >= 100 ? 'success' : undefined"
               />
               <el-descriptions :column="3" size="small" border class="stat">
                 <el-descriptions-item label="任务总数">{{ scrape.status.counts.total }}</el-descriptions-item>
@@ -445,6 +450,9 @@ function onSelectRow(item: ResultItem) {
                     <el-button size="small" text type="primary" @click.stop="selected = c.item; onRescrape()">
                       🔄 重刮
                     </el-button>
+                    <el-button size="small" text type="primary" @click.stop="onManualScrape(c)">
+                      ✍️ 手动刮削
+                    </el-button>
                   </template>
                 </ScrapeCard>
               </div>
@@ -518,6 +526,9 @@ function onSelectRow(item: ResultItem) {
         <el-button type="primary" @click="onResume">继续刮削剩余任务（{{ resumeInfo?.count }}）</el-button>
       </template>
     </el-dialog>
+
+    <!-- 手动刮削（失败卡片入口，与软件工具-单文件刮削共用） -->
+    <ManualScrapeDialog ref="scrapeDialogRef" />
 
     <!-- NFO 查看 -->
     <el-dialog v-model="nfoDialog" :title="nfoPath" width="720px" top="6vh">

@@ -51,12 +51,28 @@ class ScrapeJobManager:
 
     # endregion
 
+    def _reset_scrape_counts(self) -> None:
+        """点开始时同步清零上一轮计数。
+
+        计数的正式重置在异步 run 开头（reset_flags_preserving_single_file_inputs），
+        但 POST 立即返回、前端随即拉 /status——这里不清零，上一轮的
+        done/total 会被当成新任务进度，进度条先闪一下旧任务的 100% 再回 0。
+        """
+        Flags.total_count = 0
+        Flags.scrape_started = 0
+        Flags.scrape_done = 0
+        Flags.succ_count = 0
+        Flags.fail_count = 0
+        Flags.skipped_count = 0
+        Flags.restored_count = 0
+
     def start(self, mode: FileMode = FileMode.Default, movie_list: list | None = None) -> None:
         with self._lock:
             if self.state != "idle":
                 raise JobAlreadyRunning("当前有任务正在运行或停止中")
             self.results.clear()
             self.progress = 0
+            self._reset_scrape_counts()
             self.started_at = time.time()
         from mdcx.core import scrape_live
 
@@ -69,6 +85,7 @@ class ScrapeJobManager:
                 raise JobAlreadyRunning("当前有任务正在运行或停止中")
             self.results.clear()
             self.progress = 0
+            self._reset_scrape_counts()
             self.started_at = time.time()
         from mdcx.core import scrape_live
 
@@ -95,6 +112,7 @@ class ScrapeJobManager:
                 raise JobAlreadyRunning("当前有任务正在运行或停止中")
             self.results.clear()
             self.progress = 0
+            self._reset_scrape_counts()
             self.started_at = time.time()
         from mdcx.models.flags import Flags
 

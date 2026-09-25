@@ -5,8 +5,21 @@ import { api, ApiError } from '../api/client'
 import { useScrapeStore } from '../stores/scrape'
 import DirPicker from '../components/DirPicker.vue'
 import MediaFilePicker from '../components/MediaFilePicker.vue'
+import ManualScrapeDialog from '../components/ManualScrapeDialog.vue'
 
 const scrape = useScrapeStore()
+
+// 创建 NFO / 手动刮削 共享对话框（刮削页失败卡片也复用同一组件）
+const scrapeDialogRef = ref<InstanceType<typeof ManualScrapeDialog>>()
+
+// 手动刮削：复用创建 NFO 表单，用单文件刮削 tab 选中的视频（番号由组件从文件名提取）
+function onManualScrape() {
+  if (!singleFile.value) {
+    ElMessage.warning('请先选择视频文件')
+    return
+  }
+  scrapeDialogRef.value?.open({ mode: 'scrape', videoPath: singleFile.value })
+}
 
 // 单文件刮削
 const singleFile = ref('')
@@ -218,229 +231,6 @@ async function saveEditedNfo() {
   }
 }
 
-// 创建 NFO：表单填写 → /api/nfo/create 按正常流程元素顺序生成 .nfo 文件
-const createDialog = ref(false)
-const createLoading = ref(false)
-const createTranslating = ref<'' | 'title' | 'outline'>('')
-const createResult = ref<{ path: string; content: string; covers?: { thumb: string; poster: string }; video?: string } | null>(null)
-const createCoverFile = ref<File | null>(null)
-// scrape 模式（单文件刮削 → 手动刮削）：落盘到 {目录}/{番号}/，视频移入并改名番号
-const createMode = ref<'create' | 'scrape'>('create')
-const scrapeVideoPath = ref('')
-const createForm = ref({
-  number: '',
-  release: '',
-  title: '',
-  originaltitle: '',
-  originalplot: '',
-  plot: '',
-  actors: '',
-  series: '',
-  studio: '',
-  publisher: '',
-  genres: '',
-  countrycode: 'JP',
-})
-const createDir = ref('')
-const createFilename = ref('')
-const filenameTouched = ref(false)
-const titleTouched = ref(false)
-const plotTouched = ref(false)
-
-// 成功输出目录（多路径时取第一个），作为创建 NFO 的默认保存目录
-let successDirCache = ''
-async function defaultCreateDir(): Promise<string> {
-  if (successDirCache) return successDirCache
-  try {
-    const d = await api.config()
-    successDirCache = String(d.config.success_output_folder ?? '').split('|')[0].trim()
-  } catch {
-    /* 拉取失败留空，后端会回退到成功输出目录 */
-  }
-  return successDirCache
-}
-
-function openCreateDialog(mode: 'create' | 'scrape' = 'create') {
-  createMode.value = mode
-  scrapeVideoPath.value = ''
-  createForm.value = {
-    number: '',
-    release: '',
-    title: '',
-    originaltitle: '',
-    originalplot: '',
-    plot: '',
-    actors: '',
-    series: '',
-    studio: '',
-    publisher: '',
-    genres: '',
-    countrycode: 'JP',
-  }
-  filenameTouched.value = false
-  titleTouched.value = false
-  plotTouched.value = false
-  createResult.value = null
-  createCoverFile.value = null
-  createDialog.value = true
-  defaultCreateDir().then((dir) => {
-    if (createDialog.value && !createDir.value) createDir.value = dir
-  })
-}
-
-// 文件名默认跟随番号，手动改过后不再跟随
-function onCreateNumberInput() {
-  if (!filenameTouched.value) createFilename.value = createForm.value.number.trim()
-}
-
-// originaltitle/originalplot → title/plot：复用正常流程的按字段翻译；force=手动按钮时强制覆盖
-async function translateCreateField(field: 'title' | 'outline', force: boolean) {
-  const src = field === 'title' ? createForm.value.originaltitle : createForm.value.originalplot
-  if (!src.trim()) {
-    if (force) ElMessage.warning(field === 'title' ? '请先填写原标题' : '请先填写原简介')
-    return
-  }
-  if (createTranslating.value === field) return
-  if (!force && (field === 'title' ? titleTouched.value : plotTouched.value)) return // 手动改过目标字段则不覆盖
-  createTranslating.value = field
-  try {
-    const d = await api.translateTest('text', { text: src, field })
-    const translated = (d.content ?? '').trim()
-    if (field === 'title') {
-      const n = createForm.value.number.trim()
-      createForm.value.title = n && !translated.startsWith(n) ? `${n} ${translated}` : translated
-      titleTouched.value = false
-    } else {
-      createForm.value.plot = translated
-      plotTouched.value = false
-    }
-  } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : String(e))
-  } finally {
-    createTranslating.value = ''
-  }
-}
-
-function splitCreateList(text: string): string[] {
-  return text
-    .split(/[,，\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
-function onCreateCoverPicked(uploadFile: { raw?: File }) {
-  if (uploadFile.raw) createCoverFile.value = uploadFile.raw
-}
-
-// 手动刮削：复用创建 NFO 表单，用单文件刮削 tab 选中的视频
-async function onManualScrape() {
-  if (!singleFile.value) {
-    ElMessage.warning('请先选择视频文件')
-    return
-  }
-  openCreateDialog('scrape')
-  scrapeVideoPath.value = singleFile.value
-  // 番号默认值：按正常流程规则从文件名自动提取；提取不到留空手填
-  try {
-    const d = await api.extractNumber(singleFile.value)
-    if (d.number) {
-      createForm.value.number = d.number
-      onCreateNumberInput()
-    }
-  } catch {
-    /* 提取失败不阻塞，手动填写 */
-  }
-}
-
-async function onCreateNfo(overwrite = false) {
-  const f = createForm.value
-  const scraping = createMode.value === 'scrape'
-  if (scraping && !f.number.trim()) {
-    ElMessage.warning('请填写番号（用作文件夹和视频文件名）')
-    return
-  }
-  if (!createFilename.value.trim() && !f.number.trim()) {
-    ElMessage.warning('请填写番号或文件名')
-    return
-  }
-  createLoading.value = true
-  try {
-    const subfolder = scraping ? f.number.trim() : ''
-    const d = await api.nfoCreate({
-      dir: createDir.value,
-      subfolder,
-      filename: createFilename.value,
-      overwrite,
-      fields: {
-        number: f.number.trim(),
-        release: f.release,
-        title: f.title.trim(),
-        originaltitle: f.originaltitle.trim(),
-        originalplot: f.originalplot.trim(),
-        plot: f.plot.trim(),
-        actors: splitCreateList(f.actors),
-        series: f.series.trim(),
-        studio: f.studio.trim(),
-        publisher: f.publisher.trim(),
-        genres: splitCreateList(f.genres),
-        countrycode: f.countrycode.trim(),
-      },
-    })
-    createResult.value = { path: d.path, content: d.content }
-    // 补图：与 NFO 同目录、基础名同 NFO 文件名（后端与 NFO 命名共用同一清洗规则）
-    if (createCoverFile.value) {
-      try {
-        const name = createFilename.value.trim() || f.number.trim()
-        const c = await api.nfoCreateCover(name, createDir.value, subfolder, createCoverFile.value)
-        createResult.value = { ...createResult.value!, covers: { thumb: c.thumb, poster: c.poster } }
-      } catch (e) {
-        ElMessage.error(`NFO 已创建，但补图失败：${e instanceof Error ? e.message : String(e)}`)
-      }
-    }
-    // 手动刮削：视频移入番号目录并改名为番号（保留原扩展名）
-    if (scraping && scrapeVideoPath.value) {
-      try {
-        const mv = await api.nfoMoveVideo(scrapeVideoPath.value, createDir.value, subfolder, f.number.trim(), overwrite)
-        createResult.value = { ...createResult.value!, video: mv.path }
-      } catch (e) {
-        ElMessage.error(`NFO 已创建，但视频移动失败：${e instanceof Error ? e.message : String(e)}`)
-      }
-    }
-    ElMessage.success(scraping ? `刮削完成：${d.path}` : `NFO 已创建：${d.path}`)
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 409 && !overwrite) {
-      try {
-        await ElMessageBox.confirm(`${e.message}，是否覆盖？`, '文件已存在', { type: 'warning' })
-        await onCreateNfo(true)
-      } catch {
-        /* 取消覆盖 */
-      }
-    } else {
-      ElMessage.error(e instanceof Error ? e.message : String(e))
-    }
-  } finally {
-    createLoading.value = false
-  }
-}
-
-function downloadCreatedNfo() {
-  if (!createResult.value) return
-  const blob = new Blob([createResult.value.content], { type: 'text/xml;charset=utf-8' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = createResult.value.path.split('/').pop() || 'created.nfo'
-  a.click()
-  URL.revokeObjectURL(a.href)
-}
-
-function copyCreatedNfo() {
-  if (!createResult.value) return
-  navigator.clipboard
-    .writeText(createResult.value.content)
-    .then(() => ElMessage.success('已复制到剪贴板'))
-    .catch(() => ElMessage.error('复制失败'))
-}
-
 function onBackfillFilesPicked(paths: string | string[]) {
   const list = Array.isArray(paths) ? paths : [paths]
   const merged = [...backfillNumbers.value.split(/\s+/).filter(Boolean), ...list]
@@ -612,7 +402,7 @@ onActivated(refreshStatus)
               <el-radio-button value="nfo">NFO 翻译</el-radio-button>
               <el-radio-button value="edit">NFO 直接编辑</el-radio-button>
             </el-radio-group>
-            <el-button type="primary" plain @click="openCreateDialog">🆕 创建 NFO</el-button>
+            <el-button type="primary" plain @click="scrapeDialogRef?.open()">🆕 创建 NFO</el-button>
           </div>
 
           <template v-if="translateMode === 'nfo'">
@@ -689,176 +479,7 @@ onActivated(refreshStatus)
     <!-- 翻译测试结果弹窗结束 -->
 
     <!-- 创建 NFO 表单弹窗 -->
-    <el-dialog v-model="createDialog" :title="createMode === 'scrape' ? '手动刮削' : '创建 NFO'" width="720px" top="5vh" :close-on-click-modal="false">
-      <div v-loading="createLoading">
-        <el-alert
-          v-if="createResult"
-          type="success"
-          :closable="false"
-          class="mb"
-          :title="`${createMode === 'scrape' ? '已刮削' : '已创建'}：${createResult.path}`"
-        >
-          <div v-if="createResult.covers">
-            封面图：{{ createResult.covers.thumb }}<br />{{ createResult.covers.poster }}
-          </div>
-          <div v-if="createResult.video">视频：{{ createResult.video }}</div>
-        </el-alert>
-        <template v-if="!createResult">
-          <el-form label-width="70px">
-            <el-row :gutter="10">
-              <el-col :span="12">
-                <el-form-item label="番号">
-                  <el-input v-model="createForm.number" placeholder="如 OFJE-536" @input="onCreateNumberInput" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="发行日期">
-                  <el-input v-model="createForm.release" placeholder="YYYY-MM-DD，可留空" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-form-item label="原标题">
-              <el-input
-                v-model="createForm.originaltitle"
-                placeholder="填写后自动翻译，生成带番号的标题"
-                @blur="translateCreateField('title', false)"
-              >
-                <template #append>
-                  <el-button :loading="createTranslating === 'title'" @click="translateCreateField('title', true)">
-                    翻译
-                  </el-button>
-                </template>
-              </el-input>
-            </el-form-item>
-            <el-form-item label="标题">
-              <el-input v-model="createForm.title" placeholder="留空时可由原标题翻译生成" @input="titleTouched = true" />
-            </el-form-item>
-            <el-form-item label="原简介">
-              <div class="stack-full">
-                <el-input
-                  v-model="createForm.originalplot"
-                  type="textarea"
-                  :rows="2"
-                  placeholder="填写后自动翻译，生成简介"
-                  @blur="translateCreateField('outline', false)"
-                />
-                <div class="translate-btn-row">
-                  <el-button
-                    size="small"
-                    text
-                    type="primary"
-                    :loading="createTranslating === 'outline'"
-                    @click="translateCreateField('outline', true)"
-                  >
-                    翻译
-                  </el-button>
-                </div>
-              </div>
-            </el-form-item>
-            <el-form-item label="简介">
-              <el-input
-                v-model="createForm.plot"
-                type="textarea"
-                :rows="3"
-                placeholder="可选；留空时可由原简介翻译生成"
-                @input="plotTouched = true"
-              />
-            </el-form-item>
-            <el-divider content-position="left" style="margin: 6px 0 14px">详细信息（可选）</el-divider>
-            <el-form-item label="演员">
-              <el-input v-model="createForm.actors" type="textarea" :rows="2" placeholder="多个演员用换行或逗号分隔" />
-            </el-form-item>
-            <el-row :gutter="10">
-              <el-col :span="8">
-                <el-form-item label="系列">
-                  <el-input v-model="createForm.series" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="片商">
-                  <el-input v-model="createForm.studio" placeholder="写入 studio/maker" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="发行">
-                  <el-input v-model="createForm.publisher" placeholder="写入 publisher/label" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-row :gutter="10">
-              <el-col :span="16">
-                <el-form-item label="标签">
-                  <el-input v-model="createForm.genres" placeholder="多个标签用逗号分隔（写入 genre）" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="国家">
-                  <el-select v-model="createForm.countrycode" filterable allow-create default-first-option style="width: 100%">
-                    <el-option label="JP" value="JP" />
-                    <el-option label="US" value="US" />
-                    <el-option label="CN" value="CN" />
-                    <el-option label="KR" value="KR" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-divider content-position="left" style="margin: 6px 0 14px">保存位置</el-divider>
-            <el-form-item label="目录">
-              <div class="stack-full">
-                <DirPicker v-model="createDir" placeholder="留空时保存到成功输出目录" />
-                <p v-if="createMode === 'scrape'" class="upload-hint">
-                  将在该目录下创建以番号命名的文件夹，NFO/封面/视频都放进去
-                </p>
-              </div>
-            </el-form-item>
-            <el-form-item label="文件名">
-              <el-input v-model="createFilename" placeholder="默认使用番号，自动补 .nfo" @input="filenameTouched = true">
-                <template #append>.nfo</template>
-              </el-input>
-            </el-form-item>
-            <el-form-item label="封面图">
-              <div class="stack-full">
-                <el-upload
-                  :auto-upload="false"
-                  :show-file-list="false"
-                  accept="image/jpeg,image/png,image/webp"
-                  :on-change="onCreateCoverPicked"
-                >
-                  <el-button plain>📤 选择图片（可选，生成 NFO 时一并补图）</el-button>
-                </el-upload>
-                <div v-if="createCoverFile" class="translate-btn-row">
-                  <span>{{ createCoverFile.name }}</span>
-                  <el-button size="small" text type="danger" @click="createCoverFile = null">移除</el-button>
-                </div>
-                <p class="upload-hint">图片基础名与 NFO 文件名一致：原图作 thumb，横图自动裁竖版 poster</p>
-              </div>
-            </el-form-item>
-          </el-form>
-        </template>
-        <template v-else>
-          <el-input
-            :model-value="createResult.content"
-            type="textarea"
-            :autosize="{ minRows: 12, maxRows: 24 }"
-            readonly
-          />
-        </template>
-      </div>
-      <template #footer>
-        <template v-if="createResult">
-          <el-button @click="copyCreatedNfo">复制</el-button>
-          <el-button @click="downloadCreatedNfo">下载</el-button>
-          <el-button @click="createResult = null">继续创建</el-button>
-          <el-button type="primary" @click="createDialog = false">关闭</el-button>
-        </template>
-        <template v-else>
-          <el-button @click="createDialog = false">取消</el-button>
-          <el-button type="primary" :loading="createLoading" @click="onCreateNfo()">
-            {{ createMode === 'scrape' ? '刮削' : '生成 NFO' }}
-          </el-button>
-        </template>
-      </template>
-    </el-dialog>
+    <ManualScrapeDialog ref="scrapeDialogRef" />
     <!-- 创建 NFO 表单弹窗结束 -->
     <el-card shadow="never" header="👩 Gfriends 头像库同步" class="mt">
           <DirPicker v-model="gfriendsPath" placeholder="Gfriends 本地仓库目录" class="mb" />
