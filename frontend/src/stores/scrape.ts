@@ -28,6 +28,13 @@ export const useScrapeStore = defineStore('scrape', () => {
   const currentFileLabel = ref('')
   const running = computed(() => status.value.state === 'running')
   const stopping = computed(() => status.value.state === 'stopping')
+  // 进度条统一口径：已完成/总数。exec_set_processbar 推的是「已开始/总数」，
+  // 最后一个文件一开始刮就到 100%，会与「全部」页签的完成进度对不上。
+  // total==0（已点开始、计数已清零但扫描未完成）显示 0，不回退到旧 processbar 值。
+  const donePercent = computed(() => {
+    const c = status.value.counts
+    return c.total > 0 ? Math.round((c.done / c.total) * 100) : 0
+  })
 
   function push(list: string[], line: unknown, replaying = false) {
     list.push(String(line ?? ''))
@@ -150,6 +157,7 @@ export const useScrapeStore = defineStore('scrape', () => {
     currentFileLabel,
     running,
     stopping,
+    donePercent,
     refresh,
     loadResults,
     resetResults,

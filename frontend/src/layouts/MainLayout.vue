@@ -54,9 +54,9 @@ onUnmounted(() => {})
           scrape.currentFileLabel || scrape.scrapeInfo || '就绪'
         }}</span>
         <el-progress
-          :percentage="scrape.status.progress"
+          :percentage="scrape.donePercent"
           :stroke-width="14"
-          :status="scrape.running ? undefined : scrape.status.progress >= 100 ? 'success' : undefined"
+          :status="scrape.running ? undefined : scrape.donePercent >= 100 ? 'success' : undefined"
           class="bar"
         />
         <span class="counts">{{ countsText }}</span>
