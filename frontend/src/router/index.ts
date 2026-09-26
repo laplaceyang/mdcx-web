@@ -13,6 +13,7 @@ const router = createRouter({
         { path: 'log', name: 'log', component: () => import('../views/LogView.vue') },
         { path: 'tools', name: 'tools', component: () => import('../views/ToolsView.vue') },
         { path: 'actors', name: 'actors', component: () => import('../views/ActorManagerView.vue') },
+        { path: 'videos', name: 'videos', component: () => import('../views/VideoManagerView.vue') },
         { path: 'nfo', name: 'nfo', component: () => import('../views/NfoLibraryView.vue') },
         { path: 'settings', name: 'settings', component: () => import('../views/SettingsView.vue') },
         { path: 'network', name: 'network', component: () => import('../views/NetworkView.vue') },

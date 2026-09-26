@@ -36,6 +36,7 @@ onUnmounted(() => {})
         <el-menu-item index="/log">📝 软件日志</el-menu-item>
         <el-menu-item index="/tools">🧰 软件工具</el-menu-item>
         <el-menu-item index="/actors">👩 演员管理</el-menu-item>
+        <el-menu-item index="/videos">🎞️ 视频管理</el-menu-item>
         <el-menu-item index="/nfo">🗂️ 信息管理</el-menu-item>
         <el-menu-item index="/settings">⚙️ 软件设置</el-menu-item>
         <el-menu-item index="/network">📡 检测网络</el-menu-item>

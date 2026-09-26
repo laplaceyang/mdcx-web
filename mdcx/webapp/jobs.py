@@ -185,3 +185,20 @@ class ScrapeJobManager:
     def clear_results(self) -> None:
         with self._lock:
             self.results.clear()
+
+    def complete_failed_result(self, real_number: str, file_path: str, new_path: str) -> bool:
+        """手动刮削完成后把失败条目转为成功（状态更新，路径指向新视频位置）。
+
+        与前端结果去重键同口径：status=fail + real_number + file_path 三元组定位。
+        """
+        with self._lock:
+            for r in self.results:
+                if r.get("status") != "fail" or r.get("real_number") != real_number:
+                    continue
+                fi = (r.get("show") or {}).get("file_info") or {}
+                if str(fi.get("file_path") or "") == file_path:
+                    r["status"] = "succ"
+                    fi["file_path"] = new_path
+                    fi["file_show_name"] = Path(new_path).name
+                    return True
+        return False

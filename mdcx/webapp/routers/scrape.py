@@ -19,6 +19,12 @@ class StartRequest(BaseModel):
     appoint_url: str = ""  # mode=single：番号网址
 
 
+class ResultCompleteReq(BaseModel):
+    real_number: str = ""
+    file_path: str = ""
+    new_path: str = ""
+
+
 @router.get("/status")
 def status():
     return job_manager.status()
@@ -81,6 +87,15 @@ def results(status: str | None = None):
 def clear_results():
     job_manager.clear_results()
     return {"ok": True}
+
+
+@router.post("/results/complete")
+def complete_result(req: ResultCompleteReq):
+    """手动刮削完成后把失败条目转为成功（路径更新为新视频位置，成功页签可见）。"""
+    if not req.file_path or not req.new_path:
+        raise HTTPException(status_code=422, detail="file_path / new_path 不能为空")
+    done = job_manager.complete_failed_result(req.real_number, req.file_path, req.new_path)
+    return {"ok": True, "completed": done}
 
 
 @router.get("/detail-log")

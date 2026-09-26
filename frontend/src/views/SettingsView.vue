@@ -6,6 +6,7 @@ import FormNode from '../components/FormNode.vue'
 import FieldPriorityEditor from '../components/FieldPriorityEditor.vue'
 import SiteConfigEditor from '../components/SiteConfigEditor.vue'
 import UpdatePreview from '../components/UpdatePreview.vue'
+import VideoLibraryPicker from '../components/VideoLibraryPicker.vue'
 import tabsDef from '../settings-tabs.json'
 
 const schema = ref<Record<string, any> | null>(null)
@@ -206,6 +207,12 @@ function onTabChange(name: string) {
                   <SiteConfigEditor
                     v-else-if="entry.name === 'site_configs'"
                     :model-value="config[entry.name]"
+                    @update:model-value="config[entry.name] = $event"
+                  />
+                  <!-- 视频库：选项从 Emby 动态拉取（连接信息在本页上方字段） -->
+                  <VideoLibraryPicker
+                    v-else-if="entry.name === 'video_library_id'"
+                    :model-value="String(config[entry.name] ?? '')"
                     @update:model-value="config[entry.name] = $event"
                   />
                   <FormNode
