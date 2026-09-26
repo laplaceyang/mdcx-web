@@ -309,6 +309,22 @@ function onManualScrape(c: FailCard) {
   scrapeDialogRef.value?.open({ mode: 'scrape', videoPath: c.filePath, number: c.item.real_number || '' })
 }
 
+// 手动刮削成功（视频已移入）后把该条目转为成功：失败页签移出、成功页签可见，
+// 路径指向新视频位置；后端列表同步更新，防止刷新复活
+async function onManualScrapeDone(payload: { videoPath: string; number: string; path: string }) {
+  const item = scrape.results.find(
+    (r) => r.status === 'fail' && String((r.show?.file_info as Record<string, unknown> | undefined)?.file_path ?? '') === payload.videoPath,
+  )
+  if (!item) return
+  try {
+    await api.scrapeCompleteResult(item.real_number, payload.videoPath, payload.path)
+    scrape.completeResult(item, payload.path)
+    ElMessage.success('已移入成功列表')
+  } catch (e) {
+    ElMessage.error(`手动刮削已完成，但更新结果列表失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
 function onSelectRow(item: ResultItem) {
   selected.value = item
 }
@@ -528,7 +544,7 @@ function onSelectRow(item: ResultItem) {
     </el-dialog>
 
     <!-- 手动刮削（失败卡片入口，与软件工具-单文件刮削共用） -->
-    <ManualScrapeDialog ref="scrapeDialogRef" />
+    <ManualScrapeDialog ref="scrapeDialogRef" @done="onManualScrapeDone" />
 
     <!-- NFO 查看 -->
     <el-dialog v-model="nfoDialog" :title="nfoPath" width="720px" top="6vh">

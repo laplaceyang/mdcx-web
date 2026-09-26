@@ -7,6 +7,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import DirPicker from './DirPicker.vue'
 import { api, ApiError } from '../api/client'
 
+// 手动刮削成功（视频已移入番号目录）后通知调用方：刮削页据此把失败条目转为成功
+const emit = defineEmits<{ done: [payload: { videoPath: string; number: string; path: string }] }>()
+
 const visible = ref(false)
 const loading = ref(false)
 const translating = ref<'' | 'title' | 'outline'>('')
@@ -144,11 +147,13 @@ async function submit(overwrite = false) {
   }
   loading.value = true
   try {
-    const subfolder = scraping ? f.number.trim() : ''
+    // scrape 模式：文件夹名/文件名按设置里的命名规则渲染（演员留空时后端回退「未知演员」），
+    // 后端回传渲染结果，补图与移视频共用，保证 NFO/封面/视频基名一致
     const d = await api.nfoCreate({
       dir: dir.value,
-      subfolder,
-      filename: filename.value,
+      subfolder: '',
+      filename: scraping ? '' : filename.value,
+      use_naming_rule: scraping,
       overwrite,
       fields: {
         number: f.number.trim(),
@@ -166,21 +171,23 @@ async function submit(overwrite = false) {
       },
     })
     result.value = { path: d.path, content: d.content }
+    const renderedName = scraping ? d.name || f.number.trim() : filename.value.trim() || f.number.trim()
+    const renderedSub = scraping ? d.subfolder || '' : ''
     // 补图：与 NFO 同目录、基础名同 NFO 文件名（后端与 NFO 命名共用同一清洗规则）
     if (coverFile.value) {
       try {
-        const name = filename.value.trim() || f.number.trim()
-        const c = await api.nfoCreateCover(name, dir.value, subfolder, coverFile.value)
+        const c = await api.nfoCreateCover(renderedName, dir.value, renderedSub, coverFile.value)
         result.value = { ...result.value!, covers: { thumb: c.thumb, poster: c.poster } }
       } catch (e) {
         ElMessage.error(`NFO 已创建，但补图失败：${e instanceof Error ? e.message : String(e)}`)
       }
     }
-    // 手动刮削：视频移入番号目录并改名为番号（保留原扩展名）
+    // 手动刮削：视频移入番号目录并改名（与 NFO 基名一致）
     if (scraping && videoPath.value) {
       try {
-        const mv = await api.nfoMoveVideo(videoPath.value, dir.value, subfolder, f.number.trim(), overwrite)
+        const mv = await api.nfoMoveVideo(videoPath.value, dir.value, renderedSub, renderedName, overwrite)
         result.value = { ...result.value!, video: mv.path }
+        emit('done', { videoPath: videoPath.value, number: f.number.trim(), path: mv.path })
       } catch (e) {
         ElMessage.error(`NFO 已创建，但视频移动失败：${e instanceof Error ? e.message : String(e)}`)
       }
@@ -338,11 +345,11 @@ defineExpose({ open })
             <div class="stack-full">
               <DirPicker v-model="dir" placeholder="留空时保存到成功输出目录" />
               <p v-if="mode === 'scrape'" class="upload-hint">
-                将在该目录下创建以番号命名的文件夹，NFO/封面/视频都放进去
+                文件夹与文件名按设置里的命名规则生成（演员留空时用「未知演员」），NFO/封面/视频都放进去
               </p>
             </div>
           </el-form-item>
-          <el-form-item label="文件名">
+          <el-form-item v-if="mode === 'create'" label="文件名">
             <el-input v-model="filename" placeholder="默认使用番号，自动补 .nfo" @input="filenameTouched = true">
               <template #append>.nfo</template>
             </el-input>

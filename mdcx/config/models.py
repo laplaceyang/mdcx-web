@@ -637,6 +637,7 @@ class Config(BaseModel):
     emby_url: HttpUrl = Field(default=HttpUrl("http://127.0.0.1:8096"), title="Emby网址")
     api_key: str = Field(default="", title="API密钥")
     user_id: str = Field(default="", title="用户ID")
+    video_library_id: str = Field(default="", title="视频库")
     emby_on: list[EmbyAction] = Field(
         default_factory=lambda: [
             EmbyAction.ACTOR_INFO_ZH_CN,

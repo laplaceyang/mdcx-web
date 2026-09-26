@@ -69,6 +69,16 @@ export const useScrapeStore = defineStore('scrape', () => {
     results.value = items
   }
 
+  function completeResult(item: ResultItem, newPath: string) {
+    // 手动刮削完成后失败 → 成功：状态与路径就位，成功页签可见；去重键同步换新
+    seenResultKeys.delete(resultKey(item))
+    item.status = 'succ'
+    const fi = (item.show?.file_info ?? {}) as Record<string, unknown>
+    fi.file_path = newPath
+    fi.file_show_name = newPath.replace(/\\/g, '/').split('/').pop() || newPath
+    seenResultKeys.add(resultKey(item))
+  }
+
   async function loadResults() {
     try {
       resetResults((await api.scrapeResults()).items)
@@ -161,6 +171,7 @@ export const useScrapeStore = defineStore('scrape', () => {
     refresh,
     loadResults,
     resetResults,
+    completeResult,
     initWs,
   }
 })

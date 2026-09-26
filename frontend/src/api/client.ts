@@ -40,6 +40,12 @@ export const api = {
   scrapeResults: (status?: string) =>
     request<{ items: ResultItem[] }>(`/api/scrape/results${status ? `?status=${status}` : ''}`),
   clearResults: () => request('/api/scrape/results', 'DELETE'),
+  scrapeCompleteResult: (realNumber: string, filePath: string, newPath: string) =>
+    request<{ ok: boolean; completed: boolean }>('/api/scrape/results/complete', 'POST', {
+      real_number: realNumber,
+      file_path: filePath,
+      new_path: newPath,
+    }),
   scrapeStart: (mode = 'default', movieList?: string[]) =>
     request('/api/scrape/start', 'POST', { mode, movie_list: movieList }),
   scrapeResume: () => request('/api/scrape/start', 'POST', { resume: true }),
@@ -136,9 +142,15 @@ export const api = {
     dir?: string
     subfolder?: string
     filename?: string
+    use_naming_rule?: boolean
     overwrite?: boolean
     fields: Record<string, unknown>
-  }) => request<{ ok: boolean; path: string; content: string }>('/api/nfo/create', 'POST', payload),
+  }) =>
+    request<{ ok: boolean; path: string; content: string; name?: string; subfolder?: string }>(
+      '/api/nfo/create',
+      'POST',
+      payload,
+    ),
   nfoCreateCover: (name: string, dir: string, subfolder: string, file: File, overwrite = true) =>
     fetch(
       `/api/nfo/create-cover?name=${encodeURIComponent(name)}&dir=${encodeURIComponent(
@@ -200,6 +212,22 @@ export const api = {
     }),
   embyActorDeleteImage: (actor: Record<string, unknown>) =>
     request('/api/emby/actor/delete-image', 'POST', { actor }),
+  // ===== Emby 视频管理 =====
+  embyLibraries: () => request<{ libraries: EmbyLibrary[] }>('/api/emby/libraries'),
+  embyVideos: (parentId: string, startIndex = 0, limit = 200, keyword = '', libraryType = '', duplicatesOnly = false) =>
+    request<{ total: number; cached: boolean; ts: number; videos: EmbyVideo[] }>(
+      `/api/emby/videos?parent_id=${encodeURIComponent(parentId)}&start_index=${startIndex}&limit=${limit}&keyword=${encodeURIComponent(keyword)}&library_type=${encodeURIComponent(libraryType)}&duplicates_only=${duplicatesOnly}`,
+    ),
+  embyRefreshVideos: (parentId: string, libraryType = '') =>
+    request<{ ok: boolean; ts: number }>('/api/emby/videos/refresh', 'POST', {
+      parent_id: parentId,
+      library_type: libraryType,
+    }),
+  embyDeleteVideo: (parentId: string, itemId: string) =>
+    request<{ ok: boolean; message: string }>('/api/emby/videos/delete', 'POST', {
+      parent_id: parentId,
+      item_id: itemId,
+    }),
 }
 
 function apiBase(): string {
@@ -235,6 +263,27 @@ export interface EmbyActor {
   has_image?: boolean
   has_overview?: boolean
   movie_count?: number
+}
+
+export interface EmbyLibrary {
+  id: string
+  name: string
+  type: string
+}
+
+export interface EmbyVideo {
+  id: string
+  name: string
+  type: string
+  number: string
+  year?: number | null
+  path: string
+  size: number
+  provider_ids: Record<string, string>
+  date_created: string
+  has_image: boolean
+  thumb: string
+  image: string
 }
 
 export interface ScrapeStatus {

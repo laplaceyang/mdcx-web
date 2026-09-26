@@ -138,6 +138,7 @@
       "emby_url",
       "api_key",
       "user_id",
+      "video_library_id",
       "emby_on",
       "use_database",
       "info_database_path",

@@ -229,6 +229,7 @@ class NfoCreate(BaseModel):
     dir: str = ""  # 保存目录；留空 = 成功输出目录（非绝对路径时回退配置数据目录）
     subfolder: str = ""  # 番号子目录（手动刮削）：在 dir 下再建一层，清洗规则同文件名
     filename: str = ""  # 文件名（可省略 .nfo 后缀）；留空 = 番号
+    use_naming_rule: bool = False  # 手动刮削：按设置里的命名规则（文件夹名称/文件名称）渲染目录与文件名
     overwrite: bool = False
     fields: dict = {}
 
@@ -333,11 +334,72 @@ def _resolve_create_dir(dir_value: str, subfolder: str = "") -> Path:
     return directory
 
 
+def _render_manual_scrape_names(fields: dict) -> tuple[str, str]:
+    """手动刮削按设置里的命名规则渲染 (文件夹名, 文件名不含扩展名)。
+
+    对齐正常刮削流程：模板、后缀开关、长度上限都读生效配置；演员为空时
+    命名上下文自动回退到 actor_no_name（默认「未知演员」）。
+    """
+    from mdcx.config.manager import manager
+    from mdcx.core.naming import NameRenderOptions, NamingTarget, render_name
+    from mdcx.models.model_types import CrawlersResult, FileInfo
+
+    res = CrawlersResult.empty()
+    res.number = _as_str(fields, "number")
+    res.title = _as_str(fields, "title")
+    res.originaltitle = _as_str(fields, "originaltitle")
+    res.actors = _as_list(fields, "actors")
+    res.series = _as_str(fields, "series")
+    res.studio = _as_str(fields, "studio")
+    res.publisher = _as_str(fields, "publisher")
+    res.tags = _as_list(fields, "genres")
+    release = _as_str(fields, "release")
+    if release:
+        res.release = release
+        res.year = release[:4]
+
+    file_info = FileInfo.empty()
+    cfg = manager.config
+    folder = render_name(
+        cfg.folder_name,
+        file_info,
+        res,
+        NameRenderOptions(
+            target=NamingTarget.FOLDER,
+            show_definition_suffix=cfg.folder_hd,
+            show_cnword_suffix=cfg.folder_cnword,
+            show_moword_suffix=cfg.folder_moword,
+            max_length=int(cfg.folder_name_max),
+        ),
+    ).text
+    file_base = render_name(
+        cfg.naming_file,
+        file_info,
+        res,
+        NameRenderOptions(
+            target=NamingTarget.FILE,
+            show_definition_suffix=cfg.file_hd,
+            show_cnword_suffix=cfg.file_cnword,
+            show_moword_suffix=cfg.file_moword,
+            max_length=int(cfg.file_name_max),
+        ),
+    ).text
+    return folder, file_base
+
+
 @router.post("/create")
 def create_nfo(req: NfoCreate):
     """创建 NFO：表单字段按正常流程的元素顺序写成 .nfo 文件（工具页「创建 NFO」）。"""
     fields = req.fields or {}
-    directory = _resolve_create_dir(req.dir, req.subfolder)
+    subfolder = req.subfolder
+    if req.use_naming_rule:
+        # 手动刮削：文件夹名/文件名按设置里的命名规则渲染，与刮削成功产物同名规则
+        folder_name, file_base = _render_manual_scrape_names(fields)
+        if not file_base:
+            raise HTTPException(status_code=422, detail="命名规则渲染结果为空，请检查番号/标题")
+        subfolder = folder_name
+        req.filename = file_base
+    directory = _resolve_create_dir(req.dir, subfolder)
     _check_dir(directory)
 
     name = _create_base_name(req.filename, _as_str(fields, "number"))
@@ -355,7 +417,8 @@ def create_nfo(req: NfoCreate):
     except OSError as e:
         raise HTTPException(status_code=422, detail=f"NFO 写入失败: {e}") from e
     signal.show_log_text(f"🆕 NFO 已创建: {target}")
-    return {"ok": True, "path": str(target), "content": content}
+    # name/subfolder 回传渲染结果：前端补图与移视频用同一套名字，保证 NFO/封面/视频基名一致
+    return {"ok": True, "path": str(target), "content": content, "name": name[:-4], "subfolder": subfolder}
 
 
 @router.post("/create-cover")
@@ -415,10 +478,10 @@ def move_video(
     src: str = Query(..., description="视频文件当前路径"),
     dir: str = Query("", description="父目录；留空 = 成功输出目录"),
     subfolder: str = Query("", description="番号子目录，与 NFO 落盘目录一致"),
-    name: str = Query(..., description="目标文件名（不含扩展名），与番号一致"),
+    name: str = Query(..., description="目标文件名（不含扩展名），与 NFO 基名一致"),
     overwrite: bool = Query(False),
 ):
-    """手动刮削收尾：把选中的视频移入番号目录并改名为番号。
+    """手动刮削收尾：把选中的视频移入番号目录并改名（与 NFO 基名一致，保证 Emby 关联）。
 
     跨挂载点（如 NAS 的 /media → /out）由 shutil.move 自动 copy+delete。
     """
