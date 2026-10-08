@@ -15,6 +15,14 @@ RUN pip install --no-cache-dir --retries 10 --timeout 120 --index-url "$PIP_INDE
 # 前端构建产物（构建镜像前先在 frontend/ 执行 npm run build）
 COPY frontend/dist ./frontend/dist
 
+# 允许以任意非 root 身份运行（运行身份由 compose 的 user 指定）：
+# - 代码全局可读可进入，不受构建机 umask 影响
+# - 数据目录预建为全局可写 + 粘滞位（挂卷时被卷遮盖；不挂卷时任意 uid 首启可写入默认配置）
+# - MDCx.config 标记文件预建为全局可写（CMD 的 [ -f ] 检查会跳过重建，应用运行时可改写）
+RUN chmod -R o+rX /app \
+    && mkdir -p /app/data && chmod a+rwx,o+t /app/data \
+    && printf /app/data/config.json > /app/MDCx.config && chmod a+rw /app/MDCx.config
+
 ENV PYTHONUNBUFFERED=1
 ENV MDCX_WEB_HOST=0.0.0.0
 ENV MDCX_WEB_PORT=9801
