@@ -1,6 +1,10 @@
 import re
+from typing import Any
 
-from mdcx.crawlers.dmm_api import DmmApiCrawler, _DmmApiItem
+import pytest
+
+from mdcx.crawlers.base import CrawlerException
+from mdcx.crawlers.dmm_api import DmmApiCrawler, _DmmApiItem, _is_risk_control_400
 from mdcx.models.model_types import CrawlerInput
 
 
@@ -344,3 +348,131 @@ class TestSearchKeywords:
     def test_non_number_falls_back_to_raw(self):
         assert DmmApiCrawler._search_keywords("FC2-1234567") == ["FC2-1234567"]
         assert DmmApiCrawler._search_keywords("乱码文件名") == ["乱码文件名"]
+
+
+class _StubJsonClient:
+    """get_json 桩：按序弹出响应，最后一个响应重复返回。"""
+
+    def __init__(self, responses: list[tuple[Any | None, str]]):
+        self._responses = responses
+        self.calls: list[str] = []
+
+    async def get_json(self, url: str, **_kwargs):
+        self.calls.append(url)
+        if len(self._responses) > 1:
+            return self._responses.pop(0)
+        return self._responses[0]
+
+
+_RISK_ERROR = (
+    "GET https://api.dmm.com/affiliate/v3/ItemList 失败: HTTP 400 "
+    'body={"result":{"status":400,"message":"BAD REQUEST",'
+    '"errors":{"api_id":"Invalid Request Error"}}}'
+)
+_PLAIN_400_ERROR = 'GET https://api.dmm.com/affiliate/v3/ItemList 失败: HTTP 400 body={"errors":{"keyword":"bad"}}'
+
+
+def _success_response() -> dict:
+    return {
+        "result": {
+            "status": 200,
+            "items": [
+                {
+                    "service_code": "digital",
+                    "content_id": "meyd00286",
+                    "product_id": "meyd286",
+                    "title": "テスト作品",
+                    "imageURL": {"large": "https://pics.dmm.co.jp/digital/video/meyd00286/meyd00286pl.jpg"},
+                    "iteminfo": {"actress": [{"name": "松下紗栄子"}]},
+                    "affiliateURL": "https://al.dmm.co.jp/?l=999&q=meyd00286",
+                }
+            ],
+        }
+    }
+
+
+class TestIsRiskControl400:
+    def test_matches_risk_signature(self):
+        assert _is_risk_control_400(_RISK_ERROR) is True
+
+    def test_plain_400_without_signature(self):
+        assert _is_risk_control_400(_PLAIN_400_ERROR) is False
+
+    def test_other_status(self):
+        assert _is_risk_control_400("GET https://api.dmm.com 失败: HTTP 503") is False
+
+    def test_empty_error(self):
+        assert _is_risk_control_400("") is False
+
+
+@pytest.mark.asyncio
+class TestRisk400Retry:
+    """DMM 风控 400 秒败（2026-11-01 批量未知演员根因之一）：应退避重试。"""
+
+    async def _run_with_client(self, monkeypatch, responses):
+        sleeps: list[float] = []
+
+        async def _fake_sleep(seconds):
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("mdcx.crawlers.dmm_api.asyncio.sleep", _fake_sleep)
+        client = _StubJsonClient(responses)
+        crawler = DmmApiCrawler(client=client)
+
+        async def _no_trailer(_ctx, _item):
+            return ""
+
+        monkeypatch.setattr(crawler, "_fetch_trailer", _no_trailer)
+
+        async def _no_post_process(_ctx, res):
+            return res
+
+        monkeypatch.setattr(crawler, "post_process", _no_post_process)
+        ctx = crawler.new_context(CrawlerInput.empty())
+        ctx.input.number = "MEYD-286"
+        result = await crawler._run(ctx)
+        return result, client, sleeps
+
+    async def _run_expecting_error(self, monkeypatch, responses):
+        sleeps: list[float] = []
+
+        async def _fake_sleep(seconds):
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("mdcx.crawlers.dmm_api.asyncio.sleep", _fake_sleep)
+        client = _StubJsonClient(responses)
+        crawler = DmmApiCrawler(client=client)
+
+        async def _no_trailer(_ctx, _item):
+            return ""
+
+        monkeypatch.setattr(crawler, "_fetch_trailer", _no_trailer)
+
+        async def _no_post_process(_ctx, res):
+            return res
+
+        monkeypatch.setattr(crawler, "post_process", _no_post_process)
+        ctx = crawler.new_context(CrawlerInput.empty())
+        ctx.input.number = "MEYD-286"
+        with pytest.raises(CrawlerException, match="API 请求失败"):
+            await crawler._run(ctx)
+        return client, sleeps
+
+    async def test_retry_then_success(self, monkeypatch):
+        result, client, sleeps = await self._run_with_client(
+            monkeypatch,
+            [(None, _RISK_ERROR), (None, _RISK_ERROR), (_success_response(), "")],
+        )
+        assert len(client.calls) == 3
+        assert sleeps == [2.0, 4.0]
+        assert result.actors == ["松下紗栄子"]
+
+    async def test_gives_up_after_attempts(self, monkeypatch):
+        client, sleeps = await self._run_expecting_error(monkeypatch, [(None, _RISK_ERROR)])
+        assert len(client.calls) == 3
+        assert sleeps == [2.0, 4.0]
+
+    async def test_plain_400_not_retried(self, monkeypatch):
+        client, sleeps = await self._run_expecting_error(monkeypatch, [(None, _PLAIN_400_ERROR)])
+        assert len(client.calls) == 1
+        assert sleeps == []

@@ -222,19 +222,15 @@ def test_config_default_site_priorities_follow_current_frontend_defaults():
         Website.JAVDAY,
     ]
     assert config.get_field_config(CrawlerResultFields.TITLE).site_prority == DEFAULT_FIELD_SITE_PRIORITY
+    # youma 的 title/actors 走静态默认覆盖（dmm_api+javbus 互补兜底），不再动态推导长列表
     assert config.get_type_field_config(FixedScrapingType.YOUMA, CrawlerResultFields.TITLE).site_prority == [
-        Website.DMM,
-        Website.OFFICIAL,
-        Website.LIBREDMM,
-        Website.MGSTAGE,
-        Website.PRESTIGE,
-        Website.AVBASE,
-        Website.JAVDB,
+        Website.DMM_API,
         Website.JAVBUS,
-        Website.IQQTV,
-        Website.FREEJAVBT,
-        Website.MISSAV,
-        Website.AVMOO,
+    ]
+    assert config.get_type_field_config(FixedScrapingType.YOUMA, CrawlerResultFields.ACTORS).site_prority == [
+        Website.DMM_API,
+        Website.JAVBUS,
+        Website.JAVDB_APP,
     ]
     assert config.get_type_field_config(FixedScrapingType.FC2, CrawlerResultFields.TITLE).site_prority == [
         Website.JAVDB,

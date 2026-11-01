@@ -1,3 +1,4 @@
+import asyncio
 import re
 from typing import Any, override
 from urllib.parse import urlencode
@@ -16,6 +17,16 @@ from .dmm import DMMContext, DmmCrawler
 _DEFAULT_API_ID = "UrwskPfkqQ0DuVry2gYL"
 _DEFAULT_AFFILIATE_ID = "10278-996"
 _API_PATH = "/affiliate/v3/ItemList"
+
+# DMM 风控窗口期会对合法请求一律返回 HTTP 400 "Invalid Request Error"，窗口过后同一请求
+# 即恢复 200（2026-11-01 实测），与参数错误这类真 400 不同，值得短暂退避后重试
+_RISK_400_ATTEMPTS = 3
+_RISK_400_BACKOFF_SECONDS = (2.0, 4.0)
+
+
+def _is_risk_control_400(error: str) -> bool:
+    """识别 DMM 风控 400：web_async 对 >=400 的错误串会附带截断响应体（"HTTP 400 body=..."）"""
+    return "HTTP 400" in error and "Invalid Request Error" in error
 
 
 class _DmmApiItem(BaseModel):
@@ -216,6 +227,20 @@ class DmmApiCrawler(DmmCrawler):
         ctx.number_00 = number_lower.replace("-", "00")
         ctx.number_no_00 = number_lower.replace("-", "")
 
+    async def _get_json_with_risk_retry(self, ctx: DMMContext, api_url: str) -> tuple[Any | None, str]:
+        """GET JSON，命中 DMM 风控 400 时退避重试（其余错误原样返回，不重试）"""
+        error = ""
+        for attempt in range(_RISK_400_ATTEMPTS):
+            response, error = await self.async_client.get_json(api_url, headers={"Accept": "application/json"})
+            if response is not None or not _is_risk_control_400(error):
+                return response, error
+            if attempt >= _RISK_400_ATTEMPTS - 1:
+                break
+            wait = _RISK_400_BACKOFF_SECONDS[attempt]
+            ctx.debug(f"DMM 风控 400，{wait:.0f}s 后重试 ({attempt + 1}/{_RISK_400_ATTEMPTS})")
+            await asyncio.sleep(wait)
+        return None, error
+
     @override
     async def _run(self, ctx: DMMContext) -> CrawlerResult:
         number = ctx.input.number.strip()
@@ -232,7 +257,7 @@ class DmmApiCrawler(DmmCrawler):
             ctx.debug(f"API URL: {api_url}")
             ctx.debug_info.search_urls = list(search_urls)
 
-            response, error = await self.async_client.get_json(api_url, headers={"Accept": "application/json"})
+            response, error = await self._get_json_with_risk_retry(ctx, api_url)
             if response is None:
                 raise CrawlerException(f"API 请求失败: {error}")
 

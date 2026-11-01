@@ -164,3 +164,53 @@ def test_config_set_field_skip():
 
     config.set_field_skip(CrawlerResultFields.TITLE, False)
     assert config.get_field_config(CrawlerResultFields.TITLE).skip is False
+
+
+def test_youma_default_override_actors_title():
+    """youma 的 actors 默认覆盖为 [dmm_api, javbus, javdb_app]，title 为 [dmm_api, javbus]。
+
+    dmm_api 数据最全但风控窗口期整站 400 秒败，javbus 可达性最好；javdb_app 走
+    第三方 API 域名作第三兜底（2026-11-02 实证前两者同挂时它是唯一幸存源）。
+    """
+    config = Config()
+    configs = config.build_type_field_configs(FixedScrapingType.YOUMA)
+    assert configs[CrawlerResultFields.ACTORS].site_prority == [
+        Website.DMM_API,
+        Website.JAVBUS,
+        Website.JAVDB_APP,
+    ]
+    assert configs[CrawlerResultFields.TITLE].site_prority == [Website.DMM_API, Website.JAVBUS]
+
+
+def test_youma_default_override_applied_on_fresh_config():
+    """全新配置（缺失条目补全路径）同样拿到覆盖后的默认值。"""
+    config = Config()
+    fpc = config.get_type_field_config(FixedScrapingType.YOUMA, CrawlerResultFields.ACTORS)
+    assert fpc.site_prority == [Website.DMM_API, Website.JAVBUS, Website.JAVDB_APP]
+
+
+def test_youma_default_override_respects_skip():
+    """字段级 skip 优先于默认覆盖。"""
+    config = Config()
+    config.set_field_skip(CrawlerResultFields.ACTORS, True)
+    configs = config.build_type_field_configs(FixedScrapingType.YOUMA)
+    assert configs[CrawlerResultFields.ACTORS].skip is True
+    assert configs[CrawlerResultFields.ACTORS].site_prority == []
+
+
+def test_youma_default_override_filtered_by_type_sites():
+    """覆盖表按类型站点集过滤：站点不在 website_youma 时回退站点集兜底。"""
+    config = Config()
+    config.website_youma = [Website.DMM]
+    configs = config.build_type_field_configs(FixedScrapingType.YOUMA)
+    assert configs[CrawlerResultFields.ACTORS].site_prority == [Website.DMM]
+
+
+def test_normalize_preserves_explicit_youma_priority():
+    """已有显式配置不被默认覆盖重写（normalize 只过滤、不重推导）。"""
+    config = Config()
+    config.set_type_field_sites(FixedScrapingType.YOUMA, CrawlerResultFields.ACTORS, [Website.JAVBUS])
+    config.ensure_type_field_configs()
+    assert config.get_type_field_config(FixedScrapingType.YOUMA, CrawlerResultFields.ACTORS).site_prority == [
+        Website.JAVBUS
+    ]

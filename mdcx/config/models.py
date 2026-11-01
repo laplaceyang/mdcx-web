@@ -161,6 +161,23 @@ def default_field_config(language: Language = Language.UNDEFINED, translate: boo
     return FieldConfig(site_prority=list(DEFAULT_FIELD_SITE_PRIORITY), language=language, translate=translate)
 
 
+# 类型字段优先级的静态默认覆盖：命中的字段不走「全局优先级 ∩ 类型站点」推导。
+# 依据 2026-11-01 批量刮削实测：dmm_api 数据最全但 DMM 风控窗口期会整站 400 秒败，
+# javbus 可达性最好且数据完备，两者互补；而默认推导列表里 xcity/libredmm 等
+# 不可达站排在前面，站点一挂每站白等超时（xcity 单站可拖 40s），演员/标题随之落空。
+# 仅影响全局优先级未自定义的全新配置/重置/缺失条目补全，已有显式配置不受影响
+# （normalize 只过滤不重推导；用户改过全局字段优先级则仍走其推导）。
+DEFAULT_TYPE_FIELD_SITE_OVERRIDES: dict[FixedScrapingType, dict[CrawlerResultFields, list[Website]]] = {
+    FixedScrapingType.YOUMA: {
+        # javdb_app 走第三方 API 域名（apidd.czssdgz.com，带两个备胎），与
+        # dmm_api/javbus 基础设施不同，三者同时不可达的概率低（2026-11-02 实证：
+        # dmm_api 风控 + javbus 镜像故障同发的窗口里它是唯一幸存源）
+        CrawlerResultFields.ACTORS: [Website.DMM_API, Website.JAVBUS, Website.JAVDB_APP],
+        CrawlerResultFields.TITLE: [Website.DMM_API, Website.JAVBUS],
+    },
+}
+
+
 SENSITIVE_FIELDS = frozenset(
     {
         "baidu_key",
@@ -921,8 +938,12 @@ class Config(BaseModel):
             if fc.skip:
                 configs[crawler_field] = FieldPriorityConfig(skip=True)
                 continue
-            field_sites = fc.site_prority
-            sites = [site for site in field_sites if site in type_site_set]
+            override = DEFAULT_TYPE_FIELD_SITE_OVERRIDES.get(scraping_type, {}).get(crawler_field)
+            # 覆盖仅服务未自定义全局优先级的配置：用户改过全局列表则尊重其推导
+            if override and fc.site_prority == DEFAULT_FIELD_SITE_PRIORITY:
+                sites = [site for site in override if site in type_site_set]
+            else:
+                sites = [site for site in fc.site_prority if site in type_site_set]
             if not sites:
                 sites = list(type_sites)
             configs[crawler_field] = FieldPriorityConfig(site_prority=sites)
