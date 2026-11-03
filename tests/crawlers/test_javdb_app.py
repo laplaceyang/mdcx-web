@@ -128,6 +128,52 @@ async def test_run_maps_cover_to_thumb_and_thumb_to_poster():
 
 
 @pytest.mark.asyncio
+async def test_run_actor_gender_filter_keeps_female_drops_male():
+    """gender 整型约定 0=女、1=男（线上 HBAD-268 翻车样本：曾把男优当女优、丢掉石原莉奈）。
+
+    未知/缺失 gender 放行；显式男性(1)剔除。
+    """
+
+    class FakeClient:
+        async def get_json(self, url: str, **kwargs):
+            if "/api/v2/search" in url:
+                return (
+                    {"data": {"movies": [{"id": "movie-1", "number": "HBAD-268", "title": "Title"}]}},
+                    "",
+                )
+            if "/api/v4/movies/movie-1" in url:
+                return (
+                    {
+                        "data": {
+                            "movie": {
+                                "id": "movie-1",
+                                "number": "HBAD-268",
+                                "title": "Title",
+                                "actors": [
+                                    {"id": "Oqd0", "name": "石原莉奈", "gender": 0},
+                                    {"id": "6JRE", "name": "佐川銀次", "gender": 1},
+                                    {"id": "zKMkb", "name": "花岡じった", "gender": 1},
+                                    {"id": "xxxx", "name": "无性别信息"},
+                                ],
+                            }
+                        }
+                    },
+                    "",
+                )
+            raise AssertionError(f"unexpected url: {url}")
+
+    crawler = JavdbAppCrawler(client=FakeClient())
+    input_data = CrawlerInput.empty()
+    input_data.number = "HBAD-268"
+
+    response = await crawler.run(input_data)
+
+    assert response.data is not None
+    assert response.data.actors == ["石原莉奈", "无性别信息"]
+    assert response.data.all_actors == ["石原莉奈", "佐川銀次", "花岡じった", "无性别信息"]
+
+
+@pytest.mark.asyncio
 async def test_run_bf_does_not_match_abf():
     class FakeClient:
         async def get_json(self, url: str, **kwargs):

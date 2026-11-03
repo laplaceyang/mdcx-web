@@ -215,14 +215,18 @@ class JavdbAppCrawler(BaseCrawler):
 
     @staticmethod
     def _is_female(actor: dict) -> bool:
+        """JavDB App API 的 gender 约定：0=女、1=男（HBAD-268 实测：石原莉奈=0、佐川銀次/花岡じった=1）。
+
+        缺失/未知值放行（当女优），只排除显式男性，避免误杀 gender=2 等未观测取值的女优。
+        """
         gender = actor.get("gender")
         if gender is not None:
             if isinstance(gender, str):
-                return gender.lower() in ("female", "女", "女优", "女優")
+                return gender.lower() not in ("male", "男", "男性")
             if isinstance(gender, bool):
                 return gender
             if isinstance(gender, int):
-                return gender == 1
+                return gender != 1
         return True
 
     @staticmethod
